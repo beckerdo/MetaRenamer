@@ -43,10 +43,18 @@
 			<artifactId>commons-cli</artifactId>
 			<version>1.2</version>
 		</dependency>
+    	<dependency>
+      		<groupId>junit</groupId>
+      		<artifactId>junit</artifactId>
+      		<version>4.11</version>
+      		<scope>test</scope>
+    	</dependency>
+
 	</dependencies>
 
+
 	<properties>
-		<version.tika>1.6-SNAPSHOT</version.tika> <!-- Need to pick up MP3, MP4 parser updates (album artist,disc,compilation) -->
+		<version.tika>1.7-SNAPSHOT</version.tika> <!-- Need to pick up MP3, MP4 parser updates (album artist,disc,compilation) -->
 	</properties>
 
 </project>

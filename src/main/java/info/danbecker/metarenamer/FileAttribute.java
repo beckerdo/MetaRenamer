@@ -5,7 +5,7 @@ public enum FileAttribute {
 	FILE( "file" ),
 	EXISTS( "exists" ),
 	READABLE( "readable" ),
-	WRITABLE( "writeable" ),
+	WRITABLE( "writable" ),
 	EXECUTABLE( "executable" ),
 	HIDDEN( "hidden" ),
 	LINK( "link" );

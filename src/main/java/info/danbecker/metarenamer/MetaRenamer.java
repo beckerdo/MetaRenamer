@@ -64,6 +64,7 @@ public class MetaRenamer {
 	
 	// options
 	public static boolean testMode = false;
+	public static String msgPrefix = "   action";
 	public static boolean verbose = false;
 	public static String sourcePath = ".";
 	public static String destPath = ".";	
@@ -77,6 +78,7 @@ public class MetaRenamer {
     public static int filesVisited = 0;
     public static int filesRenamed = 0;
     public static int filesCollided = 0;
+    public static int filesCreated = 0;
     public static int dirsVisited = 0;
     public static int dirsRenamed = 0;
     public static int dirsCollided = 0;
@@ -87,6 +89,7 @@ public class MetaRenamer {
 	public static Set<String> doNotParse = new TreeSet<String>( Arrays.asList("application/pdf") );
 	// A cache of paths, so that collision count does not increment.
 	public static Set<String> checkedPaths = new TreeSet<String>();
+	public static boolean cachePaths = true;
     
 // Test files of various types.
 //	String [] fileNames = {
@@ -99,7 +102,6 @@ public class MetaRenamer {
 //      "E:\\audio\\DansMusic\\Various - DIY\\1993 - DIY We're Desperate The L.A. Scene (1976-79)\\", // compilation/albumArtist
 //	    "E:\\audio\\DansMusic\\Various - KGSR\\2013 - KGSR Broadcasts Vol. 21 - Disc 2\\", // multi disc compilation    
 //		};
-		
 
 	/** Commmand line version of this application. */
 	public static void main(String[] args) throws Exception {
@@ -126,13 +128,14 @@ public class MetaRenamer {
 	    	if ( verbose )
 	    		System.out.println( "   running in test mode");
 	    }	    
+		msgPrefix = testMode ? "   proposed action: " : "   action: "; 
 	    if( line.hasOption( "sourcePath" ) ) {
 	    	sourcePath = line.getOptionValue( "sourcePath" );
 	    	if ( verbose ) {
 	    		System.out.println( "   source path for files=" + Paths.get( sourcePath ));
 	    	}
 	    }	    
-	    checkPath( sourcePath, EnumSet.of( PatternPortion.ALL ), EnumSet.of( EXISTS, READABLE ), EnumSet.noneOf( FileAction.class ) );
+	    checkPath( sourcePath, EnumSet.of( PatternPortion.ALL ), EnumSet.of( EXISTS, READABLE, FileAttribute.DIRECTORY ), EnumSet.noneOf( FileAction.class ) );
 	    if( line.hasOption( "destinationPath" ) ) {
 	    	destPath  = line.getOptionValue( "destinationPath" );
 	    	if ( verbose ) {
@@ -141,9 +144,8 @@ public class MetaRenamer {
 	    } else {
 	    	destPath = sourcePath;
 	    }
-	    checkPath( destPath, EnumSet.of( PatternPortion.ALL ), EnumSet.of( EXISTS, READABLE, WRITABLE ), EnumSet.of( CREATE )  );
+	    checkPath( destPath, EnumSet.of( PatternPortion.ALL ), EnumSet.of( EXISTS, READABLE, WRITABLE,  FileAttribute.DIRECTORY ), EnumSet.of( CREATE )  );
 	    
-		patterns = split( pattern, PATTERN_DELIMITER );  // Bugs in String [] keys = pattern.split( " -\\x2E" );  // x2E= point
 	    if( line.hasOption( "pattern" ) ) {
 	    	pattern = line.getOptionValue( "pattern" );
 	    	if ( verbose ) {
@@ -272,118 +274,148 @@ public class MetaRenamer {
 	    // Patterni = 0..n-1 for just paths, n-2 for path+filename
 		// int length = pathOnly ?  paths.length - 2: paths.length - 1;
 		boolean result = true;
-		String msgPrefix = testMode ? "   proposed action: " : "   action: "; 
 					
 		Path currentPath = null;
 		// public static Path get(String first,String... more)
-		//  getPath("/foo","bar","gus")  =>  "/foo/bar/gus" 
+		// getPath("/foo","bar","gus")  =>  "/foo/bar/gus" 
 		
 		for ( int patterni = 0; patterni < patterns.length; patterni++) {
+			boolean lastPathPattern = patterni == patterns.length - 1;
 			if ( ( 0 == patterni ) && ( portions.contains( ROOT ) || portions.contains( ALL ) || portions.contains( PatternPortion.DIRECTORY )  ))
 				currentPath = Paths.get( patterns[ patterni ] );
 			else { 
 				currentPath = Paths.get( currentPath.toString(), patterns[ patterni ] );
-			}
+			}			
 			
-			if ( !checkedPaths.contains( currentPath.toString() ) ) {
+			// Use cache unless requestd || actions || empty cache.
+			if ( !cachePaths || (actions.size() > 0) || !checkedPaths.contains( currentPath.toString() ) ) {
 				File currentFile = currentPath.toFile();
+				// if ( MetaRenamer.verbose ) {
+				// 	StringBuffer attr = new StringBuffer();
+				//	if ( currentFile.exists() ) attr.append( "E" );
+				//	if ( currentFile.canRead()) attr.append( "R" );
+				//	if ( currentFile.canWrite()) attr.append( "W" );
+				//	if ( currentFile.canExecute()) attr.append( "E" );
+				//	if ( currentFile.exists() ) {
+				//		// Files will throw IOException if non-existent.
+				//		if ( Files.isHidden( currentPath )) attr.append( "H" );
+				//		if ( Files.isSymbolicLink( currentPath )) attr.append( "L" );
+				//	}
+				//	System.out.println( "   checkPath currentFile=\"" + currentFile.getPath() + "\", absPath=\"" + currentFile.getAbsolutePath() + "\", attrs=" + attr.toString() );
+				// }					
 				if (attrs.contains( EXISTS )) result &= currentFile.exists();
 				if ( actions.contains( CREATE ) && !currentFile.exists() ) {
   			       if ( verbose ) 
   			    	   System.out.println( msgPrefix + "create file=" + currentFile.toString() );
   			       if (!testMode) {
-   				     currentFile.createNewFile();  			        	  
+  			    	 if ( lastPathPattern )
+  			    		 currentFile.createNewFile();
+  			    	 else
+  			    		 currentFile.mkdir();
+   				     result = currentFile.exists(); // redo
   			       }
+  			       // reset non-exist to true
 				}
-				if ( actions.contains( UPDATE )) {
+				if ( actions.contains( UPDATE )  && lastPathPattern ) { // only update bottom most one in path
 					if ( verbose )
 	 			    	System.out.println( msgPrefix + "update file=" + currentFile.toString() );
 			        if (!testMode) {
 			        	currentFile.setLastModified( (new Date()).getTime() );        	  
 			        }
 				}
-				if ( actions.contains( DELETE )) {
+				if (attrs.contains( READABLE )) result &= currentFile.canRead();
+				if (attrs.contains( WRITABLE )) result &= currentFile.canWrite();
+				if (attrs.contains( EXECUTABLE )) result &= currentFile.canExecute();
+				if (attrs.contains( FileAttribute.DIRECTORY ) && lastPathPattern) result &= currentFile.isDirectory();
+				if (attrs.contains( FileAttribute.FILE ) && lastPathPattern) result &= currentFile.isFile();
+				if ( result ) {
+					// Files will throw IOException if non-existent.
+					if (attrs.contains( HIDDEN )) result &= Files.isHidden( currentPath );
+					if (attrs.contains( LINK )) result &= Files.isSymbolicLink( currentPath );
+				}
+				if ( actions.contains( DELETE ) && lastPathPattern) { // only delete bottom most one in path
 					if ( verbose )
 	 			    	System.out.println( msgPrefix + "delete file=" + currentFile.toString() );
 			        if (!testMode) {
 			        	currentFile.delete();        	  
 			        }
+				} else {
+					if (cachePaths)
+						checkedPaths.add( currentPath.toString() ); // do not add if just deleted.
 				}
-				if (attrs.contains( READABLE )) result &= currentFile.canRead();
-				if (attrs.contains( WRITABLE )) result &= currentFile.canWrite();
-				if (attrs.contains( EXECUTABLE )) result &= currentFile.canExecute();
-				if (attrs.contains( HIDDEN )) result &= Files.isHidden( currentPath );
-				if (attrs.contains( LINK )) result &= Files.isSymbolicLink( currentPath );
-				checkedPaths.add( currentPath.toString() );
+				if ( !result ) return result; // short circuit
 			}
 		}
 		return result;
 	}
 	
 	/** Recommends or performs action on media directory name. Currently only looks at audio MP3 and MP4 media types. s*/
-	public static void dirNameAction( final Metadata metaData ) {
+	public static void dirNameAction( final Metadata metaData ) throws IOException {
 		MediaType mediaType = MediaType.parse( metaData.get( MEDIATYPE_KEY ));
 		if ( "audio/mp4".equals( mediaType.toString() ) || "audio/mpeg".equals( mediaType.toString() )) {
 			// Recall that pattern contains full path/filename, 
-			// patterns contains pattern broken up by path delimiters. [...,parent2,parent1,parent0,filename]
+			// patterns [] contains pattern broken up by path delimiters. [...,parent2,parent1,parent0,filename]
 			// patternKeyNames  contains list of all key names in pattern
 			
 			String oldPath =  metaData.get( Metadata.RESOURCE_NAME_KEY );
-			String [] oldPaths = split( oldPath, PATTERN_DELIMITER );  // Bugs in String [] keys = pattern.split( " -\\x2E" );  // x2E= point		
-			// For each path, ensure that each target parent directory exists and is writable.
-		    // Patterni = 0..n-2
-			for ( int patterni = 0;  patterni < patterns.length - 2; patterni++) {
-				String currentPattern = patterns[ patterni ];
-
-			}
 			
-			// For each pattern, ensure that each target parent directory exists and is writable.
-		    // Patterni = 0..n-2
-			for ( int patterni = 0;  patterni < patterns.length - 2; patterni++) {
-				String currentPattern = patterns[ patterni ];
-
-			}
-			
-			String proposedName = parentNamePattern;
-			for ( String key: parentNameKeys) {
+			// Check that the file exists and is readable. 
+		    boolean oldExists = checkPath( oldPath, EnumSet.of( PatternPortion.ALL ), EnumSet.of( EXISTS, READABLE ), EnumSet.noneOf( FileAction.class ) );
+		    if ( !oldExists  ) {
+		    	if ( verbose )
+		    		System.out.println( "   file \"" + oldPath + "\" does not exist or is not readable." );
+		    	return;
+		    }
+		    
+		    // Propose a new pattern.
+		    String proposedPattern = new String( pattern ); 
+			for ( String key: patternKeyNames ) {
+				String value = metaData.get( key );
 				// System.out.println( "   key=" + key + ", value=" + value);
-				proposedName = proposedName.replace( key , value );
+				proposedPattern = proposedPattern.replaceAll( key , value );
 			}
-			if ( !testMode ) {
-			    Path oldDir = Paths.get( metaData.get( "parentPath" ), metaData.get( "parentName" ) ); 
-			    Path newDir = Paths.get( metaData.get( "parentPath" ), proposedName ); 
-				boolean oldExists = Files.exists( oldDir );
-				dirsVisited++;
-				if ( oldExists ) {
-				   long lastMod = oldDir.toFile().lastModified();
-				   if ( verbose )
-				      System.out.println ( "   " + oldDir.getFileName() +  ", exists=" + oldExists + ", lastMod=" + (new Date( lastMod )).toString());			   
-				} else {					
-				   if ( verbose )
-				      System.out.println ( "   " + oldDir.getFileName() +  ", exists=" + oldExists );
-				}
-				boolean newExists = Files.exists( newDir );
-				dirsVisited++;
-				if ( newExists  ) {
-				   dirsCollided++;
-				   long lastMod = newDir.toFile().lastModified();
-				   if ( verbose )
-   				      System.out.println ( "   " + newDir.getFileName() +  ", exists=" + newExists + ", lastMod=" + (new Date( lastMod )).toString());			   					
-				} else {
-				   if ( verbose )
-				      System.out.println ( "   " + newDir.getFileName() + ", exists=" + newExists );
-				}
-				if ( oldExists && !newExists ) {
-  				   System.out.println( "   action: dir  rename \"" + parentName + "\" to \"" + proposedName + "\"" );
-  				   // Visit each name in the pattern and potentially create directories.
-  				   // dirsCreated++;
-  				   // Rename old directory to new.
-  				   dirsRenamed++;
-				   if ( verbose )
-					  System.out.println( "   action: rename success" );
-				   // Files.move( oldPath, newPath );	
-				}
-			}
+			
+		    Path proposedPath = Paths.get( destPath, proposedPattern );
+		    if ( verbose ) {
+		    	System.out.println( msgPrefix + " change old pattern\"" + oldPath + "\" to\n   new pattern \"" + proposedPath + "\"." );
+		    }
+		    
+//			String proposedName = parentNamePattern;
+//			if ( !testMode ) {
+//			    Path oldDir = Paths.get( metaData.get( "parentPath" ), metaData.get( "parentName" ) ); 
+//			    Path newDir = Paths.get( metaData.get( "parentPath" ), proposedName ); 
+//				boolean oldExists = Files.exists( oldDir );
+//				dirsVisited++;
+//				if ( oldExists ) {
+//				   long lastMod = oldDir.toFile().lastModified();
+//				   if ( verbose )
+//				      System.out.println ( "   " + oldDir.getFileName() +  ", exists=" + oldExists + ", lastMod=" + (new Date( lastMod )).toString());			   
+//				} else {					
+//				   if ( verbose )
+//				      System.out.println ( "   " + oldDir.getFileName() +  ", exists=" + oldExists );
+//				}
+//				boolean newExists = Files.exists( newDir );
+//				dirsVisited++;
+//				if ( newExists  ) {
+//				   dirsCollided++;
+//				   long lastMod = newDir.toFile().lastModified();
+//				   if ( verbose )
+//   				      System.out.println ( "   " + newDir.getFileName() +  ", exists=" + newExists + ", lastMod=" + (new Date( lastMod )).toString());			   					
+//				} else {
+//				   if ( verbose )
+//				      System.out.println ( "   " + newDir.getFileName() + ", exists=" + newExists );
+//				}
+//				if ( oldExists && !newExists ) {
+//  				   System.out.println( "   action: dir  rename \"" + parentName + "\" to \"" + proposedName + "\"" );
+//  				   // Visit each name in the pattern and potentially create directories.
+//  				   // dirsCreated++;
+//  				   // Rename old directory to new.
+//  				   dirsRenamed++;
+//				   if ( verbose )
+//					  System.out.println( "   action: rename success" );
+//				   // Files.move( oldPath, newPath );	
+//				}
+//			}
 		// } else if ( "audio/x-wav".equals( mediaType.toString() )) {			
 		} else {
 		   // System.out.println( "   no action: type \"" + mediaType.toString() + "\"" );
@@ -402,47 +434,47 @@ public class MetaRenamer {
 				}
 			}
 
-			String proposedName = pattern;
-			for ( String key: keys) {
-				String value = metaData.get( key );
-				if ( key.contains( "trackNumber")) {
-					value = cleanTrack( value );
-				}
-				// System.out.println( "   key=" + key + ", value=" + value);
-				proposedName = proposedName.replace( key , value );
-			}
-			// System.out.println( "   action: file rename \"" + metaData.get( "fileName") + "\" to \"" + proposedName + "\"" );
-			if ( !testMode ) {
-			    Path dir = Paths.get( metaData.get( "parentPath" ), metaData.get( "parentName" ) ); 
-       	        Path oldFile = dir.resolve( metaData.get( "fileName" ) );
-				boolean oldExists = Files.exists(  oldFile );
-				if ( oldExists ) {
-				   long lastMod = oldFile.toFile().lastModified();
-				   if ( verbose )
-				      System.out.println ( "   " + oldFile.getFileName() +  ", exists=" + oldExists + ", lastMod=" + (new Date( lastMod )).toString());			   
-				} else {
-				   if ( verbose )
-   				      System.out.println ( "   " + oldFile.getFileName() +  ", exists=" + oldExists );
-				}
-       	        Path newFile = dir.resolve( proposedName );
-				boolean newExists = Files.exists( newFile );
-				if ( newExists  ) {
-				   filesCollided++;
-				   long lastMod = newFile.toFile().lastModified();
-				   if ( verbose )
-				      System.out.println ( "   " + newFile.getFileName() +  ", exists=" + newExists + ", lastMod=" + (new Date( lastMod )).toString());			   					
-				} else {
-				   if ( verbose )
-				      System.out.println ( "   " + newFile.getFileName() + ", exists=" + newExists );
-				}
-				if ( oldExists && !newExists ) {
-  				   filesRenamed++;
- 				   System.out.println( "   action: file rename \"" + oldFile.getFileName() + "\" to \"" + proposedName + "\"" );
-  				   if ( verbose )
-  					  System.out.println( "   action: rename success" );
-				   // Files.move( oldPath, newPath );	
-				}
-			}
+//			String proposedName = pattern;
+//			for ( String key: keys) {
+//				String value = metaData.get( key );
+//				if ( key.contains( "trackNumber")) {
+//					value = cleanTrack( value );
+//				}
+//				// System.out.println( "   key=" + key + ", value=" + value);
+//				proposedName = proposedName.replace( key , value );
+//			}
+//			// System.out.println( "   action: file rename \"" + metaData.get( "fileName") + "\" to \"" + proposedName + "\"" );
+//			if ( !testMode ) {
+//			    Path dir = Paths.get( metaData.get( "parentPath" ), metaData.get( "parentName" ) ); 
+//       	        Path oldFile = dir.resolve( metaData.get( "fileName" ) );
+//				boolean oldExists = Files.exists(  oldFile );
+//				if ( oldExists ) {
+//				   long lastMod = oldFile.toFile().lastModified();
+//				   if ( verbose )
+//				      System.out.println ( "   " + oldFile.getFileName() +  ", exists=" + oldExists + ", lastMod=" + (new Date( lastMod )).toString());			   
+//				} else {
+//				   if ( verbose )
+//   				      System.out.println ( "   " + oldFile.getFileName() +  ", exists=" + oldExists );
+//				}
+//       	        Path newFile = dir.resolve( proposedName );
+//				boolean newExists = Files.exists( newFile );
+//				if ( newExists  ) {
+//				   filesCollided++;
+//				   long lastMod = newFile.toFile().lastModified();
+//				   if ( verbose )
+//				      System.out.println ( "   " + newFile.getFileName() +  ", exists=" + newExists + ", lastMod=" + (new Date( lastMod )).toString());			   					
+//				} else {
+//				   if ( verbose )
+//				      System.out.println ( "   " + newFile.getFileName() + ", exists=" + newExists );
+//				}
+//				if ( oldExists && !newExists ) {
+//  				   filesRenamed++;
+// 				   System.out.println( "   action: file rename \"" + oldFile.getFileName() + "\" to \"" + proposedName + "\"" );
+//  				   if ( verbose )
+//  					  System.out.println( "   action: rename success" );
+//				   // Files.move( oldPath, newPath );	
+//				}
+//			}
 		// } else if ( "audio/x-wav".equals( mediaType.toString() )) {			
 		} else {
 		   if ( verbose ) {
