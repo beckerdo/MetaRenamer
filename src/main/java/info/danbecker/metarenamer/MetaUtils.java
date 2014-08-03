@@ -120,6 +120,24 @@ public class MetaUtils {
 	    folder.delete();
 	}	
 	
+	public static Path escapeChars( Path proposed ) {
+		return Paths.get( escapeChars( proposed.toString() ));
+	}
+	
+	/** Replace bad file name characters with similar looking characters. */
+	public static String escapeChars( String proposedString ) {
+		// Cannot have the following characters in a Windows file system.
+		// < > : " / \ | ? *
+
+		proposedString = proposedString.replace( ':', ',' );
+		proposedString = proposedString.replace( '"', '\'' );
+		proposedString = proposedString.replace( '/', '¦' );
+		proposedString = proposedString.replace( '\\', '¦' );
+		proposedString = proposedString.replace( '?', '!' );
+		proposedString = proposedString.replace( '*',  '+' );
+		return proposedString;
+	}
+	
 	/** Recusively delete folder, even if it has contents. */
 	public static long recursiveSize(File folder) throws IOException {
 		long size = 0;

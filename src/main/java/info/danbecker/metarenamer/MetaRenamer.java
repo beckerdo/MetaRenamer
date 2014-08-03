@@ -54,6 +54,7 @@ public class MetaRenamer {
 	public static boolean testMode = false;
 	public static String msgPrefix = "   action: ";
 	public static boolean verbose = false;
+	public static boolean debug = false;
 	public static String sourcePath = ".";
 	public static String destPath = ".";	
 	public static boolean quiet = false;
@@ -99,6 +100,10 @@ public class MetaRenamer {
 	    	verbose = true;	
 	    	System.out.println( "   running in verbose mode");
 	    }	    
+	    if( line.hasOption( "debug" ) ) {
+	    	debug = true;	
+	    	System.out.println( "   running in debug mode");
+	    }	    
 	    if( line.hasOption( "test" ) ) {
 	    	testMode = true;	
 	    	// this.fileName = line.getOptionValue( "fileName" );
@@ -135,7 +140,10 @@ public class MetaRenamer {
 		patternKeyNames = MetaUtils.split( pattern, " -./" );  // Bugs in String [] keys = pattern.split( " -\\x2E" );  // x2E= point
 	    if( line.hasOption( "move" ) ) {
 	    	moveTrueCopyFalse = true;
-	    }	    
+    		System.out.println( "   moving/renaming files" );
+	    } else {
+    		System.out.println( "   copying files" );
+	    }
 	    if( line.hasOption( "quiet" ) ) {
 	    	quiet = true;
 	    }	    
@@ -173,6 +181,7 @@ public class MetaRenamer {
 		options.addOption( "h", "help", false, "print the command line options." );
 		options.addOption( "t", "test", false, "do not perform actions, just list what would happen." );
 		options.addOption( "v", "verbose", false, "prints many more messages to the console than normal." );
+		options.addOption( "d", "debug", false, "prints many more messages to the console than verbose." );
 		options.addOption( "s", "sourcePath", true, "starting path for file search. The default is the local directory for the app." );
 		options.addOption( "d", "destinationPath", true, "desination path for file search. The default is the source directory." );
 		options.addOption( "p", "pattern", true, "pattern for filename and parent directories." );
@@ -193,6 +202,8 @@ public class MetaRenamer {
 	    String mediaTypeString = mediaType.toString();
 	    metadata.add( MEDIATYPE_KEY, mediaTypeString);
 	    // Parse interesting media types.
+	    // TODO Need to rethink this loop scheme. How do PDF, txt, image and other files stick with the album?
+	    // Perhaps check parent dir, list all files, stick with one with metadata.
 	    if ( !(mediaTypeString.startsWith( "application" ) || 
 	    		mediaTypeString.startsWith( "text" ) || 
 	    		mediaTypeString.startsWith( "images" ) || 
@@ -220,10 +231,9 @@ public class MetaRenamer {
 	public static void fileNameAction( final Metadata metaData ) throws IOException {
 		MediaType mediaType = MediaType.parse( metaData.get( MEDIATYPE_KEY ));
 		if ( "audio/mp4".equals( mediaType.toString() ) || "audio/mpeg".equals( mediaType.toString() )) {
-		    MetaUtils.updateMetadata( metaData ); // add or clean up metadata
-		    
-			// if ( verbose ) {
-		    //    listAllMetaData( metaData );
+		    MetaUtils.updateMetadata( metaData ); // add or clean up metadata		    
+			if ( debug ) 
+				MetaUtils.listAllMetadata( metaData );
 
 		    // Recall that pattern contains full path/filename, 
 			// patterns [] contains pattern broken up by path delimiters. [...,parent2,parent1,parent0,filename]
@@ -245,10 +255,11 @@ public class MetaRenamer {
 				String value = metaData.get( key );
 				// System.out.println( "   key=" + key + ", value=" + value);
 				if ( null == value ) value = ""; 
+			    value = MetaUtils.escapeChars( value );
 				proposedName = proposedName.replaceAll( key , value );
 			}
 			
-		    Path proposedPath = Paths.get( destPath, proposedName );		    
+		    Path proposedPath = Paths.get( destPath, proposedName );
 		    if ( !oldPath.equals(proposedPath )) {
 			    if ( Files.exists( proposedPath )) {
 			    	if ( verbose ) {
@@ -288,7 +299,7 @@ public class MetaRenamer {
 		// } else if ( "audio/x-wav".equals( mediaType.toString() )) {			
 		} else {
 		   if ( verbose ) {
-		      System.out.println( "   no action: type \"" + mediaType.toString() + "\"" );
+			  System.out.println( "   no action: \"" + metaData.get( Metadata.RESOURCE_NAME_KEY ) + "\", type=\"" + mediaType.toString() + "\"" );
 		   }
 		}	
 	}
@@ -305,8 +316,8 @@ public class MetaRenamer {
 		// Use cache unless requestd || actions || empty cache.
 		if ( !cachePaths || (actions.size() > 0) || !checkedPaths.contains( path.toString() ) ) {
 			File currentFile = path.toFile();
-			// if ( MetaRenamer.verbose ) {
-			//    System.out.println( "   checkPath currentFile=\"" + currentFile.getPath() + "\", absPath=\"" + currentFile.getAbsolutePath() + "\", attrs=" + MetaUtils.getAttributes(pattern) );
+			if ( MetaRenamer.debug )
+			    System.out.println( "   checkPath currentFile=\"" + currentFile.getPath() + "\", absPath=\"" + currentFile.getAbsolutePath() + "\", attrs=" + MetaUtils.getAttributes(pattern) );
 			if (attrs.contains( EXISTS )) {
 				result &= currentFile.exists();
 		    	if( attrs.contains( FileAttribute.DIRECTORY )) dirsVisited++;
@@ -322,13 +333,16 @@ public class MetaRenamer {
 		    		}
 		    	 }
 		    	 if( attrs.contains( FileAttribute.DIRECTORY )) {
-   		            if ( verbose ) 
-	 				       System.out.println( msgPrefix + "create directory=" + currentFile.toString() );
-		    		if ( !testMode ) {
-		    		   // currentFile.mkdir();
-		    		   Files.createDirectories( path ); // will create recursively
-		    		   dirsCreated++;
-		    		}
+					if (!checkedPaths.contains(path.toString())) {
+						if (verbose)
+							System.out.println(msgPrefix + "create directory=" + currentFile.toString());
+						if (!testMode) {
+							// currentFile.mkdir();
+							Files.createDirectories(path); // will create recursively
+							checkedPaths.add(path.toString());
+							dirsCreated++;
+						}
+					}
 		    	 }
 			     result = currentFile.exists(); // reset to true if created
 			}
