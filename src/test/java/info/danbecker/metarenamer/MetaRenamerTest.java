@@ -116,11 +116,11 @@ public class MetaRenamerTest {
 
 		MetaRenamer.main( new String [] { "-t", "-v", "-s", "src/test/resources/info/danbecker/metarenamer/" } );
 
-		assertEquals( "files visited", 4, MetaRenamer.filesVisited );
+		assertEquals( "files visited", 5, MetaRenamer.filesVisited );
 		assertEquals( "files collided", 0, MetaRenamer.filesCollided );
 		assertEquals( "files renamed", 0, MetaRenamer.filesRenamed );
 		assertEquals( "files created", 0, MetaRenamer.filesCreated );
-		assertEquals( "dirs visited", 0, MetaRenamer.dirsVisited );
+		assertEquals( "dirs visited", 4, MetaRenamer.dirsVisited );
 		assertEquals( "dirs collided", 0, MetaRenamer.dirsCollided );
 		assertEquals( "dirs renamed", 0, MetaRenamer.dirsRenamed );
 		assertEquals( "dirs created", 0, MetaRenamer.dirsCreated );
@@ -128,6 +128,8 @@ public class MetaRenamerTest {
 	
 	@Test
     public void testCopy() throws Exception {
+		// Works when run singly. Fails when run as suite.
+
 		// Test copy/rename to a temp directory
 		Path sourcePath = Paths.get( "src/test/resources/info/danbecker/metarenamer/"  );
 		long sourceSize = MetaUtils.recursiveSize( sourcePath.toFile() );
@@ -137,10 +139,10 @@ public class MetaRenamerTest {
 		// System.out.println( "   path old size=" + oldSize );
 		MetaRenamer.main( new String [] { "-v", "-s", sourcePath.toString(), "-d", tempPath.toString() } );
 		long newSize = MetaUtils.recursiveSize( tempPath.toFile() );
-		// System.out.println( "   path new size=" + newSize );
+		System.out.println( "   tempPath=" + tempPath + ", new size=" + newSize );
 
-		assertTrue( "copied directory size compare", newSize > oldSize );
 		assertEquals( "copied directory exact size",  919522, newSize );
+		assertTrue( "copied directory size compare", newSize > oldSize );
 
 		// Assure nothing was moved/deleted from source directory.
 		long sourceSizeNew = MetaUtils.recursiveSize( sourcePath.toFile() );
@@ -167,7 +169,7 @@ public class MetaRenamerTest {
 
 		assertEquals( "copied directory exact size",  919522, oldCopySize );
 		// Give the copies 5 seconds to close
-		try { Thread.sleep( 5000 ); } catch (InterruptedException e) {}
+		// try { Thread.sleep( 5000 ); } catch (InterruptedException e) {}
 
 		// Copy to a temp directory so we don't muck up the source directory
 		Path movePath = Files.createTempDirectory( "testPath" );
