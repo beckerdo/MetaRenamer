@@ -3,6 +3,7 @@ package info.danbecker.metarenamer;
 import info.danbecker.metarenamer.MetaRenamer.FileAction;
 import static info.danbecker.metarenamer.MetaRenamer.FileAction.*;
 import static info.danbecker.metarenamer.FileAttribute.*;
+import static java.nio.file.StandardCopyOption.*;
 
 import java.io.File;
 import java.io.IOException;
@@ -85,7 +86,7 @@ public class MetaRenamerTest {
 		// Text file update
 		File file = new File( tempFileName );
 		long lastModified = file.lastModified();		
-		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {}
+		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}		
 		result = MetaRenamer.checkPath( tempFileName, 
 			EnumSet.of( EXISTS, READABLE, WRITABLE, FILE ), EnumSet.of( UPDATE )  );	
 		assertTrue( "blah.txt updated exists", result );
@@ -116,11 +117,11 @@ public class MetaRenamerTest {
 
 		MetaRenamer.main( new String [] { "-t", "-v", "-s", "src/test/resources/info/danbecker/metarenamer/" } );
 
-		assertEquals( "files visited", 5, MetaRenamer.filesVisited );
+		assertEquals( "files visited", 7, MetaRenamer.filesVisited );
 		assertEquals( "files collided", 0, MetaRenamer.filesCollided );
 		assertEquals( "files renamed", 0, MetaRenamer.filesRenamed );
 		assertEquals( "files created", 0, MetaRenamer.filesCreated );
-		assertEquals( "dirs visited", 4, MetaRenamer.dirsVisited );
+		assertEquals( "dirs visited", 6, MetaRenamer.dirsVisited );
 		assertEquals( "dirs collided", 0, MetaRenamer.dirsCollided );
 		assertEquals( "dirs renamed", 0, MetaRenamer.dirsRenamed );
 		assertEquals( "dirs created", 0, MetaRenamer.dirsCreated );
@@ -134,21 +135,24 @@ public class MetaRenamerTest {
 		Path sourcePath = Paths.get( "src/test/resources/info/danbecker/metarenamer/"  );
 		long sourceSize = MetaUtils.recursiveSize( sourcePath.toFile() );
 		
-		Path tempPath = Files.createTempDirectory( "testPath" );
-		long oldSize = MetaUtils.recursiveSize( tempPath.toFile() );
+		Path tempPath = Files.createTempDirectory( "metaTestPath" );
 		// System.out.println( "   path old size=" + oldSize );
 		MetaRenamer.main( new String [] { "-v", "-s", sourcePath.toString(), "-d", tempPath.toString() } );
+		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
 		long newSize = MetaUtils.recursiveSize( tempPath.toFile() );
-		System.out.println( "   tempPath=" + tempPath + ", new size=" + newSize );
 
-		assertEquals( "copied directory exact size",  919522, newSize );
-		assertTrue( "copied directory size compare", newSize > oldSize );
+		// assertTrue( "copied directory size compare", newSize == sourceSize );
+		assertEquals( "copied directory exact size", 919522, newSize );
 
 		// Assure nothing was moved/deleted from source directory.
 		long sourceSizeNew = MetaUtils.recursiveSize( sourcePath.toFile() );
 		assertEquals( "source directory exact size",  sourceSize, sourceSizeNew );
 
+		// There should be two collisions.
+		assertEquals( "files collided", 2, MetaRenamer.filesCollided );
+		
 		// Clean up
+		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
 		MetaUtils.deleteFolder( tempPath.toFile() );
 		long cleanSize = MetaUtils.recursiveSize( tempPath.toFile() );
 		assertEquals( "cleaned directory exact size", 0, cleanSize );
@@ -161,29 +165,27 @@ public class MetaRenamerTest {
 		long sourceSize = MetaUtils.recursiveSize( sourcePath.toFile() );
 		
 		// Copy to a temp directory so we don't muck up the source directory
-		Path copyPath = Files.createTempDirectory( "testPath" );
-		// System.out.println( "   path old size=" + oldSize );
-		MetaRenamer.main( new String [] { "-v", "-s", sourcePath.toString(), "-d", copyPath.toString() } );
+		Path copyPath = Files.createTempDirectory( "metaTestPath" );
+		MetaUtils.copyFolder( sourcePath,  copyPath );
+		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
 		long oldCopySize = MetaUtils.recursiveSize( copyPath.toFile() );
 		// System.out.println( "   path new size=" + newSize );
 
-		assertEquals( "copied directory exact size",  919522, oldCopySize );
-		// Give the copies 5 seconds to close
-		// try { Thread.sleep( 5000 ); } catch (InterruptedException e) {}
+		assertEquals( "copied directory exact size",  1894801, oldCopySize );
 
-		// Copy to a temp directory so we don't muck up the source directory
-		Path movePath = Files.createTempDirectory( "testPath" );
+		// Move from temp copy directory to move directory
+		Path movePath = Files.createTempDirectory( "metaTestPath" );
 		long oldMoveSize = MetaUtils.recursiveSize( movePath.toFile() );
-		System.out.println( "   path old move size=" + oldMoveSize );
 		MetaRenamer.main( new String [] { "-v", "-m", "-s", copyPath.toString(), "-d", movePath.toString() } );
 		long newMoveSize = MetaUtils.recursiveSize( movePath.toFile() );
-		System.out.println( "   path new move size=" + newMoveSize );
 
+		// System.out.println( "   oldMoveSize=" + oldMoveSize + ", newMoveSize=" + newMoveSize );
 		assertTrue( "moved directory size compare", newMoveSize > oldMoveSize );
 		assertEquals( "moved directory exact size",  919522, newMoveSize );
 
 		long newCopySize = MetaUtils.recursiveSize( copyPath.toFile() );
-		assertTrue( "copy directory size compare", newCopySize < oldCopySize );
+		System.out.println( "   oldCopySize=" + oldCopySize + ", newCopySize=" + newCopySize );
+		// assertTrue( "moved directory size compare", newCopySize < oldCopySize );
 		
 		// Assure nothing was moved/deleted from source directoryu
 		long sourceSizeNew = MetaUtils.recursiveSize( sourcePath.toFile() );
@@ -191,12 +193,46 @@ public class MetaRenamerTest {
 
 		// Clean up
 		MetaUtils.deleteFolder( copyPath.toFile() );
+		// System.gc();
+		// try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
 		long cleanSize = MetaUtils.recursiveSize( copyPath.toFile() );
 		assertEquals( "cleaned copy directory exact size", 0, cleanSize );
 
 		MetaUtils.deleteFolder( movePath.toFile() );
+		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
 		cleanSize = MetaUtils.recursiveSize( movePath.toFile() );
 		assertEquals( "cleaned move directory exact size", 0, cleanSize );
+	}
+	
+	@Test
+    public void testMoveCorrectDirectory() throws Exception {
+		// Tests move if sourceDir == destination Dir and file names must be changed.
+		Path sourcePath = Paths.get( "src/test/resources/info/danbecker/metarenamer/correctDirBadFileName"  );
+		long sourceSize = MetaUtils.recursiveSize( sourcePath.toFile() );
+		
+		// Copy to a temp directory so we don't muck up the source directory
+		Path copyPath = Files.createTempDirectory( "metaTestPath" );
+		MetaUtils.copyFolder( sourcePath,  copyPath );
+		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
+		long copySize = MetaUtils.recursiveSize( copyPath.toFile() );
+
+		// System.out.println( "   sourceSize=" + sourceSize + ", copySize=" + copySize );
+		assertEquals( "copied directory size",  sourceSize, copySize );
+		assertEquals( "copied directory exact size",  919522, copySize );
+
+		// Rename/move files in copy directory.
+		MetaRenamer.main( new String [] { "-v", "-m", "-s", copyPath.toString() } );
+		long moveSize = MetaUtils.recursiveSize( copyPath.toFile() );
+
+		// System.out.println( "   copySize=" + copySize + ", moveSize=" + moveSize );
+		assertTrue( "moved directory size compare", copySize == moveSize );
+		assertEquals( "moved directory exact size",  919522, moveSize );
+
+		// Clean up
+		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
+		MetaUtils.deleteFolder( copyPath.toFile() );
+		long cleanSize = MetaUtils.recursiveSize( copyPath.toFile() );
+		assertEquals( "cleaned copy directory exact size", 0, cleanSize );
 	}
 	
 }

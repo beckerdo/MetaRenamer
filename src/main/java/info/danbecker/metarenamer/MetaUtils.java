@@ -2,9 +2,12 @@ package info.danbecker.metarenamer;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.StringTokenizer;
@@ -92,6 +95,8 @@ public class MetaUtils {
 		File currentFile = currentPath.toFile(); 
 		StringBuffer attr = new StringBuffer();
 		if ( currentFile.exists() ) attr.append( "E" );
+		if ( currentFile.isFile() ) attr.append( "F" );
+		if ( currentFile.isDirectory() ) attr.append( "D" );
 		if ( currentFile.canRead()) attr.append( "R" );
 		if ( currentFile.canWrite()) attr.append( "W" );
 		if ( currentFile.canExecute()) attr.append( "E" );
@@ -105,8 +110,8 @@ public class MetaUtils {
 		return attr.toString();
 	}
 
-	/** Recusively delete folder, even if it has contents. */
-	public static void deleteFolder(File folder) {
+	/** Recursively delete folder, even if it has contents. */
+	public static void deleteFolder(File folder) throws IOException  {
 	    File [] files = folder.listFiles();
 	    if(files!=null) { //some JVMs return null for empty dirs
 	        for(File f: files) {
@@ -114,11 +119,34 @@ public class MetaUtils {
 	                deleteFolder(f);
 	            } else {
 	                f.delete();
+	                // Files.delete( Paths.get( f.getAbsolutePath() ));
 	            }
 	        }
 	    }
 	    folder.delete();
+        // Files.delete( Paths.get( folder.getAbsolutePath() ));
 	}	
+	
+	/** Recursively delete folder, even if it has contents. */
+	public static void copyFolder( Path sourcePath, Path targetPath ) throws IOException  {
+	    Files.walkFileTree(sourcePath, new SimpleFileVisitor<Path>() {
+	        @Override
+	        public FileVisitResult preVisitDirectory(final Path dir,
+	                final BasicFileAttributes attrs) throws IOException {
+	            Files.createDirectories(targetPath.resolve(sourcePath
+	                    .relativize(dir)));
+	            return FileVisitResult.CONTINUE;
+	        }
+
+	        @Override
+	        public FileVisitResult visitFile(final Path file,
+	                final BasicFileAttributes attrs) throws IOException {
+	            Files.copy(file,
+	                    targetPath.resolve(sourcePath.relativize(file)));
+	            return FileVisitResult.CONTINUE;
+	        }
+	    });
+	}
 	
 	public static Path escapeChars( Path proposed ) {
 		return Paths.get( escapeChars( proposed.toString() ));
@@ -131,8 +159,8 @@ public class MetaUtils {
 
 		proposedString = proposedString.replace( ':', ',' );
 		proposedString = proposedString.replace( '"', '\'' );
-		proposedString = proposedString.replace( '/', '¦' );
-		proposedString = proposedString.replace( '\\', '¦' );
+		proposedString = proposedString.replace( '/', 'ï¿½' );
+		proposedString = proposedString.replace( '\\', 'ï¿½' );
 		proposedString = proposedString.replace( '?', '!' );
 		proposedString = proposedString.replace( '*',  '+' );
 		return proposedString;

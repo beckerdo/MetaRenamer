@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.EnumSet;
@@ -151,7 +152,7 @@ public class MetaRenamer {
 	    tikaConfig = new TikaConfig();
 	    
 	    // Kick off tree walking process.
-		Files.walkFileTree( Paths.get( sourcePath, "" ), new SimpleFileVisitor<Path>() {
+		Files.walkFileTree( Paths.get( sourcePath ), new SimpleFileVisitor<Path>() {
 		    @Override
 		    public FileVisitResult visitFile(Path file, BasicFileAttributes attr) throws FileNotFoundException, IOException {
 		        if (attr.isSymbolicLink()) {
@@ -166,11 +167,16 @@ public class MetaRenamer {
 		        // System.out.println("(" + attr.size() + "bytes)");
 		        return CONTINUE;
 		    }			
+		    @Override
+		    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+		    	// System.out.println( "   done visiting \"" + dir.toString() + "\"" );
+		    	return super.postVisitDirectory(dir, exc);
+		    }
 		});
 
 		// conclude and end
 		if (!quiet)
-	       System.out.println( "files visited/renamed/collided/created " + filesVisited + "/" + filesRenamed + "/" + filesCreated + "/" + filesCreated + 
+	       System.out.println( "files visited/renamed/collided/created " + filesVisited + "/" + filesRenamed + "/" + filesCollided + "/" + filesCreated + 
 	    		   ", dirs visited/renamed/collided/created " + dirsVisited + "/" + dirsRenamed + "/" + dirsCollided + "/" + dirsCreated + "." );
 	}
 
@@ -260,19 +266,18 @@ public class MetaRenamer {
 			}
 			
 		    Path proposedPath = Paths.get( destPath, proposedName );
-		    if ( !oldPath.equals(proposedPath )) {
+		    if ( !oldPath.equals( proposedPath )) {
 			    if ( Files.exists( proposedPath )) {
 			    	if ( verbose ) {
-			    		System.out.println( "   file \"" + proposedPath + "\" exists." );
-	    				long lastMod = oldPath.toFile().lastModified();
-				        System.out.println ( "   old file size=" + Files.size( oldPath ) +  ", lastMod=" + (new Date( lastMod )).toString());			   
-	    				lastMod = proposedPath.toFile().lastModified();
-				        System.out.println ( "   proposed size=" + Files.size( proposedPath ) +  ", lastMod=" + (new Date( lastMod )).toString());			   
+			    		System.err.println( "   file \"" + proposedPath + "\" exists." );
 			    	}
 			    	filesCollided++;
 			    	return;
 			    }
 			    
+	    	    // Check parent directory
+    			checkPath( proposedPath.getParent(), EnumSet.of( EXISTS, READABLE, WRITABLE, DIRECTORY ), EnumSet.of( CREATE ) );
+		    	
 		    	if ( verbose ) {
 		    		if ( moveTrueCopyFalse ) 
 		    			System.out.println( msgPrefix + "rename \"" + oldPath + "\" to\n      \"" + proposedPath + "\"." );
@@ -280,14 +285,14 @@ public class MetaRenamer {
 		    			System.out.println( msgPrefix + "copy \"" + oldPath + "\" to\n      \"" + proposedPath + "\"." );
 		    	}
 		    	
-	    	    // Check parent directory
-    			checkPath( proposedPath.getParent(), EnumSet.of( EXISTS, READABLE, WRITABLE, DIRECTORY ), EnumSet.of( CREATE ) );
-		    	
 		    	if ( !testMode ) {	    		
 		    		// Move file
 		    		if ( moveTrueCopyFalse ) {
-		    			Files.move( oldPath, proposedPath, ATOMIC_MOVE ); // throws The process cannot access the file because it is being used by another process.
-		    			// oldPath.toFile().renameTo(  proposedPath.toFile() ); // renames a file. DOes not actually move what is underneath
+		    			// This System.gc() call is required in JDK 7_60 and JDK 8_05
+		    			// If not called the move throws java.nio.file.FileSystemException.
+		    			System.gc();
+		    			try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
+		    			Files.move( oldPath, proposedPath ); // throws java.nio.file.FileSystemException "The process cannot access the file because it is being used by another process."
 		    			filesRenamed++;
 		    		} else {
 		    			Files.copy( oldPath, proposedPath, COPY_ATTRIBUTES ); // no REPLACE_EXISTING		    		
@@ -350,7 +355,8 @@ public class MetaRenamer {
 				if ( verbose )
 			    	System.out.println( msgPrefix + "update file=" + currentFile.toString() );
 		        if (!testMode) {
-		        	currentFile.setLastModified( (new Date()).getTime() );        	  
+		        	// currentFile.setLastModified( (new Date()).getTime() );        	  
+		        	Files.setLastModifiedTime( path, FileTime.fromMillis(System.currentTimeMillis()) );
 		        }
 			}
 			if (attrs.contains( READABLE )) result &= currentFile.canRead();
