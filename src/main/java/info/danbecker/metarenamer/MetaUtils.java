@@ -127,22 +127,20 @@ public class MetaUtils {
         // Files.delete( Paths.get( folder.getAbsolutePath() ));
 	}	
 	
-	/** Recursively delete folder, even if it has contents. */
-	public static void copyFolder( Path sourcePath, Path targetPath ) throws IOException  {
+	/** Recursively copy folder, even if it has contents. */
+	public static void copyFolder( final Path sourcePath, final Path targetPath ) throws IOException  {
 	    Files.walkFileTree(sourcePath, new SimpleFileVisitor<Path>() {
 	        @Override
 	        public FileVisitResult preVisitDirectory(final Path dir,
 	                final BasicFileAttributes attrs) throws IOException {
-	            Files.createDirectories(targetPath.resolve(sourcePath
-	                    .relativize(dir)));
+	            Files.createDirectories(targetPath.resolve(sourcePath.relativize(dir)));
 	            return FileVisitResult.CONTINUE;
 	        }
 
 	        @Override
 	        public FileVisitResult visitFile(final Path file,
 	                final BasicFileAttributes attrs) throws IOException {
-	            Files.copy(file,
-	                    targetPath.resolve(sourcePath.relativize(file)));
+	            Files.copy(file, targetPath.resolve(sourcePath.relativize(file)));
 	            return FileVisitResult.CONTINUE;
 	        }
 	    });
@@ -159,8 +157,8 @@ public class MetaUtils {
 
 		proposedString = proposedString.replace( ':', ',' );
 		proposedString = proposedString.replace( '"', '\'' );
-		proposedString = proposedString.replace( '/', '�' );
-		proposedString = proposedString.replace( '\\', '�' );
+		proposedString = proposedString.replace( '/', '|' );
+		proposedString = proposedString.replace( '\\', '|' );
 		proposedString = proposedString.replace( '?', '!' );
 		proposedString = proposedString.replace( '*',  '+' );
 		return proposedString;
