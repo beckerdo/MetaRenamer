@@ -154,11 +154,11 @@ public class MetaUtils {
 	public static String escapeChars( String proposedString ) {
 		// Cannot have the following characters in a Windows file system.
 		// < > : " / \ | ? *
-
 		proposedString = proposedString.replace( ':', ',' );
 		proposedString = proposedString.replace( '"', '\'' );
-		proposedString = proposedString.replace( '/', '|' );
-		proposedString = proposedString.replace( '\\', '|' );
+		proposedString = proposedString.replace( '/', '!' );
+		proposedString = proposedString.replace( '\\', '!' );
+		proposedString = proposedString.replace( '|', '!' );
 		proposedString = proposedString.replace( '?', '!' );
 		proposedString = proposedString.replace( '*',  '+' );
 		return proposedString;
