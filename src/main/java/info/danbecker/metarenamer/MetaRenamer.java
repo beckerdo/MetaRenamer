@@ -43,6 +43,9 @@ public class MetaRenamer {
 	public static final String PATTERN_DELIMITER = "/";
 	public static final String PATTERN_DEFAULT = "xmpDM:albumArtist/xmpDM:releaseYear - xmpDM:album/xmpDM:artist - xmpDM:releaseYear - xmpDM:album - xmpDM:trackNumber - title.extension";
 
+	public static final String ADDITIONAL_GENERICDATA_KEY_FILENAME = "filename";
+	public static final String ADDITIONAL_GENERICDATA_KEY_EXTENSION = "extension";
+	
 	public enum FileAction {
 		CREATE,
 		DELETE,
@@ -75,8 +78,12 @@ public class MetaRenamer {
     public static int dirsCollided = 0;
     public static int dirsCreated = 0;
 
-    // instance vars
+    // Tika instance vars
     public static TikaConfig tikaConfig;
+    public static DefaultParser defaultParser;
+    public static DefaultHandler defaultHandler;
+    public static ParseContext parseContext;
+    
 	public static Set<String> doNotParse = new TreeSet<String>( Arrays.asList("application/pdf") );
 	// A cache of paths, so that collision count does not increment.
 	public static Set<String> checkedPaths = new TreeSet<String>();
@@ -148,21 +155,29 @@ public class MetaRenamer {
 	    if( line.hasOption( "quiet" ) ) {
 	    	quiet = true;
 	    }	    
-	    // Init instance variables
+
+	    // Init Tika variables
 	    tikaConfig = new TikaConfig();
+	    defaultParser = (DefaultParser) tikaConfig.getParser();
+	    defaultHandler = new DefaultHandler();
+	    parseContext = new ParseContext(); 
 	    
 	    // Kick off tree walking process.
 		Files.walkFileTree( Paths.get( sourcePath ), new SimpleFileVisitor<Path>() {
 		    @Override
-		    public FileVisitResult visitFile(Path file, BasicFileAttributes attr) throws FileNotFoundException, IOException {
+		    public FileVisitResult visitFile(Path file, BasicFileAttributes attr) {
 		        if (attr.isSymbolicLink()) {
-		            System.out.format("Symbolic link: %s%n", file);
+		            System.out.format( "   will not follow symbolic link: %s%n", file );
 		        } else if (attr.isRegularFile()) {
 		            // System.out.format("Regular file: %s%n", file);
 	            	// Call back.
-	            	MetaRenamer.fileVisitor( file.toString() );
+	            	try {
+						MetaRenamer.fileVisitor( file.toString() );
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
 		        } else {
-		            System.out.format("Other: %s%n", file);
+		            System.out.format( "   will not follow other file: %s%n", file );
 		        }
 		        // System.out.println("(" + attr.size() + "bytes)");
 		        return CONTINUE;
@@ -172,7 +187,7 @@ public class MetaRenamer {
 		    	// System.out.println( "   done visiting \"" + dir.toString() + "\"" );
 		    	return super.postVisitDirectory(dir, exc);
 		    }
-		});
+		} );
 
 		// conclude and end
 		if (!quiet)
@@ -197,68 +212,55 @@ public class MetaRenamer {
 	}
 
 	/** A callback method from the file/directory visitor. */
-	public static void fileVisitor( String fileName ) throws FileNotFoundException, IOException  {
+	public static void fileVisitor( String fileName ) throws Exception  {
 		filesVisited++;
 		File file = new File(fileName);
+		if ( !file.exists() || !file.canRead()) {
+            System.out.println( "   file does not exist,readable" + file.getName() );
+            return;
+		}
 		
-		// Synthesize, update metadata
+		// Add name and type to metadata.
 		Metadata metadata = new Metadata();	
 	    metadata.add( Metadata.RESOURCE_NAME_KEY, file.toString() );   		    
 	    MediaType mediaType = tikaConfig.getDetector().detect( TikaInputStream.get(file), metadata );
-	    String mediaTypeString = mediaType.toString();
-	    metadata.add( MEDIATYPE_KEY, mediaTypeString);
-	    // Parse interesting media types.
-	    // TODO Need to rethink this loop scheme. How do PDF, txt, image and other files stick with the album?
-	    // Perhaps check parent dir, list all files, stick with one with metadata.
-	    if ( !(mediaTypeString.startsWith( "application" ) || 
-	    		mediaTypeString.startsWith( "text" ) || 
-	    		mediaTypeString.startsWith( "images" ) || 
-	    		doNotParse.contains( mediaType.toString() ))) { // PDF throws lof4j warnings
-		    // if ( verbose )
-		    //    System.out.println( msgPrefix + "visit \"" + file + "\", type=\"" + mediaTypeString + "\"" );
-		    
-		    DefaultParser defaultParser = (DefaultParser) tikaConfig.getParser();
-		    Parser specificParser = defaultParser.getParsers().get( mediaType );
-			try {
-		    	specificParser.parse( org.apache.tika.io.TikaInputStream.get( file ), new DefaultHandler(), metadata, new ParseContext() );
-		    	fileNameAction( metadata );
-			} catch ( Exception e ) {
-				System.out.println( e.toString() + ", file=\"" + file + "\", type=\"" + mediaType.toString() + "\"" );
-				e.printStackTrace();						
-			}
-		} else {
-		    // if ( verbose )
-		    //    System.out.println( "   no action: " + "\"" + file + "\", type=\"" + mediaTypeString + "\"" );		    
-		}
-	    
+	    metadata.add( MEDIATYPE_KEY, mediaType.toString());
+    	fileNameAction( metadata );    	
 	}
 		
 	/** Recommends or performs action on media file name. */
-	public static void fileNameAction( final Metadata metaData ) throws IOException {
-		MediaType mediaType = MediaType.parse( metaData.get( MEDIATYPE_KEY ));
-		if ( "audio/mp4".equals( mediaType.toString() ) || "audio/mpeg".equals( mediaType.toString() )) {
-		    MetaUtils.updateMetadata( metaData ); // add or clean up metadata		    
+	public static void fileNameAction( final Metadata metadata ) throws Exception {
+		MediaType mediaType = MediaType.parse( metadata.get( MEDIATYPE_KEY ));
+	    String mediaTypeString = mediaType.toString();
+		
+	    // Parse interesting media types.	
+		if ( "audio/mp4".equals( mediaTypeString ) || "audio/mpeg".equals( mediaTypeString )) {
+			// Add non-meta data items worth pursuing, e.g. filename, extension.
+			String resourceName = metadata.get( Metadata.RESOURCE_NAME_KEY );
+		    String fileName = resourceName.substring( resourceName.lastIndexOf( File.separator ) + 1 );
+		    metadata.add( ADDITIONAL_GENERICDATA_KEY_FILENAME, fileName ); 
+		    String extension = fileName.substring( fileName.lastIndexOf( "." ) + 1 );
+		    metadata.add( ADDITIONAL_GENERICDATA_KEY_EXTENSION, extension );
+	    	
+			// Add metadata items based on type - year, artists, mapping of names.
+		    Parser specificParser = defaultParser.getParsers().get( mediaType );
+		    File file = new File( resourceName );
+	    	specificParser.parse( TikaInputStream.get( file ), defaultHandler, metadata, parseContext );
+			
+		    MetaUtils.updateMetadata( metadata ); // add or clean up metadata		    
 			if ( debug ) 
-				MetaUtils.listAllMetadata( metaData );
+				MetaUtils.listAllMetadata( metadata );
 
 		    // Recall that pattern contains full path/filename, 
 			// patterns [] contains pattern broken up by path delimiters. [...,parent2,parent1,parent0,filename]
 			// patternKeyNames  contains list of all key names in pattern
-			String oldName =  metaData.get( Metadata.RESOURCE_NAME_KEY );
+			String oldName =  metadata.get( Metadata.RESOURCE_NAME_KEY );
 			Path oldPath = Paths.get( oldName );
-
-			// Check that the file exists and is readable. 
-		    boolean oldExists = checkPath( oldPath, EnumSet.of( EXISTS, READABLE, FILE ), EnumSet.noneOf( FileAction.class ) );
-		    if ( !oldExists  ) {
-		    	if ( verbose )
-		    		System.out.println( "   file \"" + oldPath + "\" does not exist or is not readable." );
-		    	return;
-		    }
-		    
+	    
 		    // Propose a new pattern.
 		    String proposedName = new String( pattern ); 
 			for ( String key: patternKeyNames ) {
-				String value = metaData.get( key );
+				String value = metadata.get( key );
 				// System.out.println( "   key=" + key + ", value=" + value);
 				if ( null == value ) value = ""; 
 			    value = MetaUtils.escapeChars( value );
@@ -303,8 +305,18 @@ public class MetaRenamer {
 		    
 		// } else if ( "audio/x-wav".equals( mediaType.toString() )) {			
 		} else {
+		    // Perhaps check parent dir, list all files, stick with one with metadata.
+		    if ( !(mediaTypeString.startsWith( "application" ) || 
+		    		mediaTypeString.startsWith( "text" ) || 
+		    		mediaTypeString.startsWith( "images" ) || 
+		    		doNotParse.contains( mediaType.toString() ))) { // PDF throws lof4j warnings
+			} else {
+			    // if ( verbose )
+			    //    System.out.println( "   no action: " + "\"" + file + "\", type=\"" + mediaTypeString + "\"" );		    
+			}
+		    
 		   if ( verbose ) {
-			  System.out.println( "   no action: \"" + metaData.get( Metadata.RESOURCE_NAME_KEY ) + "\", type=\"" + mediaType.toString() + "\"" );
+			  System.out.println( "   no action: \"" + metadata.get( Metadata.RESOURCE_NAME_KEY ) + "\", type=\"" + mediaType.toString() + "\"" );
 		   }
 		}	
 	}

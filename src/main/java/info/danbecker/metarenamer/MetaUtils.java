@@ -31,16 +31,12 @@ public class MetaUtils {
 		}
 	}
 	
-	/** Allows the synthesis or clean-up of metadata. */
+	/** Allows the synthesis or clean-up of metadata. 
+	 *  Requires parsed metadata for year, track, artists. */
 	public static void updateMetadata( Metadata metadata ) {
-		// synthesis
-		String resourceName = metadata.get( Metadata.RESOURCE_NAME_KEY );
-	    String fileName = resourceName.substring( resourceName.lastIndexOf( File.separator ) + 1 );
-	    metadata.add( "fileName", fileName ); 
-	    String extension = fileName.substring( fileName.lastIndexOf( "." ) + 1 );
-	    metadata.add( "extension", extension );
-    	
-	    // cleanup
+		// synthesis - add new items from existing items
+
+		// cleanup
 	    addYear( metadata );
     	cleanTrack( metadata );
 
@@ -48,6 +44,10 @@ public class MetaUtils {
 	    if ((null == albumArtist ) || ( albumArtist.length() == 0)) {
 		    metadata.set( "xmpDM:albumArtist", metadata.get( "xmpDM:artist" ) );
 	    }
+	    
+	    // mapping, transformation
+	    // e.g. albumArtist "Various Artists" to "Various"
+	    // e.g. "Compilation" to "Various"
 	}
 	
 	
