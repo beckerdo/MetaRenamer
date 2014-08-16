@@ -63,6 +63,7 @@ public class MetaRenamer {
 	public static String destPath = ".";	
 	public static boolean quiet = false;
 	public static boolean moveTrueCopyFalse = false;
+	public static int filesLimit = Integer.MAX_VALUE;
 	
 	public static String pattern; // pattern in string form with N path delimiters
 	public static String [] patterns; // pattern broken up by path delimiters. [...,parent2,parent1,parent0,filename]
@@ -120,6 +121,7 @@ public class MetaRenamer {
 	    }	    
 		msgPrefix = testMode ? "   proposed action: " : "   action: "; 
 	    if( line.hasOption( "sourcePath" ) ) {
+	    	// TODO Does not handle /iTunes/A* wildchars.
 	    	sourcePath = line.getOptionValue( "sourcePath" );
 	    	if ( verbose ) {
 	    		System.out.println( "   source path=" + Paths.get( sourcePath ));
@@ -134,8 +136,7 @@ public class MetaRenamer {
 	    } else {
 	    	destPath = sourcePath;
 	    }
-	    checkPath( destPath, EnumSet.of( EXISTS, READABLE, WRITABLE, DIRECTORY ), EnumSet.of( CREATE )  );
-	    
+	    checkPath( destPath, EnumSet.of( EXISTS, READABLE, WRITABLE, DIRECTORY ), EnumSet.of( CREATE )  );	    
 	    if( line.hasOption( "pattern" ) ) {
 	    	pattern = line.getOptionValue( "pattern" );
 	    	if ( verbose ) {
@@ -155,6 +156,14 @@ public class MetaRenamer {
 	    if( line.hasOption( "quiet" ) ) {
 	    	quiet = true;
 	    }	    
+	    if( line.hasOption( "limit" ) ) {
+	    	filesLimit = Integer.parseInt( line.getOptionValue( "limit" ) );
+	    	if ( verbose ) {
+	    		System.out.println( "   files limited to \"" + filesLimit + "\" file visits." );
+	    	}
+	    } else {
+	    	pattern = PATTERN_DEFAULT;	    	
+	    }
 
 	    // Init Tika variables
 	    tikaConfig = new TikaConfig();
@@ -166,6 +175,10 @@ public class MetaRenamer {
 		Files.walkFileTree( Paths.get( sourcePath ), new SimpleFileVisitor<Path>() {
 		    @Override
 		    public FileVisitResult visitFile(Path file, BasicFileAttributes attr) {
+				if ( filesVisited >= filesLimit ) {
+			        return FileVisitResult.TERMINATE;					
+				}
+		    	
 		        if (attr.isSymbolicLink()) {
 		            System.out.format( "   will not follow symbolic link: %s%n", file );
 		        } else if (attr.isRegularFile()) {
@@ -179,8 +192,7 @@ public class MetaRenamer {
 		        } else {
 		            System.out.format( "   will not follow other file: %s%n", file );
 		        }
-		        // System.out.println("(" + attr.size() + "bytes)");
-		        return CONTINUE;
+		        return FileVisitResult.CONTINUE;
 		    }			
 		    @Override
 		    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
@@ -208,12 +220,19 @@ public class MetaRenamer {
 		options.addOption( "p", "pattern", true, "pattern for filename and parent directories." );
 		options.addOption( "m", "move", false, "move renamed files rather than copy them." );
 		options.addOption( "q", "quiet", false, "mute all logging including title and stats." );
+		options.addOption( "l", "limit", true, "end after visiting <limit> file count." );
 		return options;
 	}
 
 	/** A callback method from the file/directory visitor. */
 	public static void fileVisitor( String fileName ) throws Exception  {
 		filesVisited++;
+		if ( filesVisited >= filesLimit ) {
+	    	if ( verbose ) {
+	    		System.out.println( "   files visited limit reached \"" + filesLimit + "\"." );
+	    	}
+	    	return;			
+		}
 		File file = new File(fileName);
 		if ( !file.exists() || !file.canRead()) {
             System.out.println( "   file does not exist,readable" + file.getName() );
