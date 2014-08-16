@@ -2,21 +2,20 @@ package info.danbecker.metarenamer;
 
 import static info.danbecker.metarenamer.FileAttribute.*;
 import static info.danbecker.metarenamer.MetaRenamer.FileAction.*;
-import static java.nio.file.FileVisitResult.CONTINUE;
 import static java.nio.file.StandardCopyOption.*;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.TreeSet;
@@ -26,6 +25,7 @@ import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
+
 import org.apache.tika.config.TikaConfig;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
@@ -43,8 +43,8 @@ public class MetaRenamer {
 	public static final String PATTERN_DELIMITER = "/";
 	public static final String PATTERN_DEFAULT = "xmpDM:albumArtist/xmpDM:releaseYear - xmpDM:album/xmpDM:artist - xmpDM:releaseYear - xmpDM:album - xmpDM:trackNumber - title.extension";
 
-	public static final String ADDITIONAL_GENERICDATA_KEY_FILENAME = "filename";
-	public static final String ADDITIONAL_GENERICDATA_KEY_EXTENSION = "extension";
+	public static final String ADDITIONAL_DATA_KEY_FILENAME = "filename";
+	public static final String ADDITIONAL_DATA_KEY_EXTENSION = "extension";
 	
 	public enum FileAction {
 		CREATE,
@@ -61,6 +61,7 @@ public class MetaRenamer {
 	public static boolean debug = false;
 	public static String sourcePath = ".";
 	public static String destPath = ".";	
+	public static String fileGlob = "*";	
 	public static boolean quiet = false;
 	public static boolean moveTrueCopyFalse = false;
 	public static int filesLimit = Integer.MAX_VALUE;
@@ -84,6 +85,7 @@ public class MetaRenamer {
     public static DefaultParser defaultParser;
     public static DefaultHandler defaultHandler;
     public static ParseContext parseContext;
+    public static PathMatcher matcher;
     
 	public static Set<String> doNotParse = new TreeSet<String>( Arrays.asList("application/pdf") );
 	// A cache of paths, so that collision count does not increment.
@@ -121,7 +123,6 @@ public class MetaRenamer {
 	    }	    
 		msgPrefix = testMode ? "   proposed action: " : "   action: "; 
 	    if( line.hasOption( "sourcePath" ) ) {
-	    	// TODO Does not handle /iTunes/A* wildchars.
 	    	sourcePath = line.getOptionValue( "sourcePath" );
 	    	if ( verbose ) {
 	    		System.out.println( "   source path=" + Paths.get( sourcePath ));
@@ -137,6 +138,15 @@ public class MetaRenamer {
 	    	destPath = sourcePath;
 	    }
 	    checkPath( destPath, EnumSet.of( EXISTS, READABLE, WRITABLE, DIRECTORY ), EnumSet.of( CREATE )  );	    
+	    if( line.hasOption( "glob" ) ) {
+	    	fileGlob  = line.getOptionValue( "glob" );
+	    	// Strange Windows * bug. 
+	    	if ( ".classpath".equals( fileGlob )) 
+	    		fileGlob = "*";
+	    	if ( verbose ) {
+	    		System.out.println( "   path glob pattern=\"" + fileGlob + "\"" );
+	    	}
+	    }
 	    if( line.hasOption( "pattern" ) ) {
 	    	pattern = line.getOptionValue( "pattern" );
 	    	if ( verbose ) {
@@ -149,9 +159,9 @@ public class MetaRenamer {
 		patternKeyNames = MetaUtils.split( pattern, " -./" );  // Bugs in String [] keys = pattern.split( " -\\x2E" );  // x2E= point
 	    if( line.hasOption( "move" ) ) {
 	    	moveTrueCopyFalse = true;
-    		System.out.println( "   moving/renaming files" );
+    		System.out.println( "   files will be moved/renamed" );
 	    } else {
-    		System.out.println( "   copying files" );
+    		System.out.println( "   files will be copied" );
 	    }
 	    if( line.hasOption( "quiet" ) ) {
 	    	quiet = true;
@@ -172,6 +182,8 @@ public class MetaRenamer {
 	    parseContext = new ParseContext(); 
 	    
 	    // Kick off tree walking process.
+    	// See file system path matching at http://docs.oracle.com/javase/tutorial/essential/io/find.html
+	    matcher = FileSystems.getDefault().getPathMatcher("glob:" + fileGlob );	    
 		Files.walkFileTree( Paths.get( sourcePath ), new SimpleFileVisitor<Path>() {
 		    @Override
 		    public FileVisitResult visitFile(Path file, BasicFileAttributes attr) {
@@ -179,26 +191,46 @@ public class MetaRenamer {
 			        return FileVisitResult.TERMINATE;					
 				}
 		    	
-		        if (attr.isSymbolicLink()) {
-		            System.out.format( "   will not follow symbolic link: %s%n", file );
-		        } else if (attr.isRegularFile()) {
+		        if (attr.isRegularFile()) {
 		            // System.out.format("Regular file: %s%n", file);
-	            	// Call back.
 	            	try {
 						MetaRenamer.fileVisitor( file.toString() );
 					} catch (Exception e) {
 						e.printStackTrace();
 					}
+		        } else if (attr.isSymbolicLink()) {
+			        System.out.format( "   will not follow symbolic link: %s%n", file );
 		        } else {
 		            System.out.format( "   will not follow other file: %s%n", file );
 		        }
 		        return FileVisitResult.CONTINUE;
-		    }			
-		    @Override
-		    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-		    	// System.out.println( "   done visiting \"" + dir.toString() + "\"" );
-		    	return super.postVisitDirectory(dir, exc);
 		    }
+		    @Override
+		    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+		    	// Only run glob on direct children of sourcePath.
+		    	// System.out.println( "   parent=\"" + dir.getParent().toString() + "\", equals=" + dir.getParent().toString().equals( sourcePath ) + ", compareTo=" + dir.getParent().compareTo( Paths.get( sourcePath )));
+		    	if ( dir.getParent().toString().equals( sourcePath )) {
+		    		Path name = dir.getFileName();
+		    		if (name != null)  {
+		    			if ( matcher.matches(name) ) {
+		    				if (( verbose ) && !( "*".equals( fileGlob ))) 
+		    					System.out.println("   sourcePath child \"" + name + "\" matches glob." );
+		    				return FileVisitResult.CONTINUE;
+		    			} else {
+		    				if (( verbose ) && !( "*".equals( fileGlob ))) 
+		                	   System.out.println("   sourcePath child \"" + name + "\" does not match glob." );
+		    		        return FileVisitResult.SKIP_SUBTREE;							    				
+		    			}
+		    		}
+		    	}
+	    		// System.out.println("   not child \"" + dir.getFileName() + "\" matches glob." );
+            	return FileVisitResult.CONTINUE;		    		
+		    }		        
+		    // @Override
+		    // public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+		    // 	// System.out.println( "   done visiting \"" + dir.toString() + "\"" );
+		    // 	return super.postVisitDirectory(dir, exc);
+		    // }
 		} );
 
 		// conclude and end
@@ -217,6 +249,7 @@ public class MetaRenamer {
 		options.addOption( "d", "debug", false, "prints many more messages to the console than verbose." );
 		options.addOption( "s", "sourcePath", true, "starting path for file search. The default is the local directory for the app." );
 		options.addOption( "d", "destinationPath", true, "desination path for file search. The default is the source directory." );
+		options.addOption( "g", "glob", true, "file name pattern matching glob (http://docs.oracle.com/javase/tutorial/essential/io/fileOps.html#glob)." );
 		options.addOption( "p", "pattern", true, "pattern for filename and parent directories." );
 		options.addOption( "m", "move", false, "move renamed files rather than copy them." );
 		options.addOption( "q", "quiet", false, "mute all logging including title and stats." );
@@ -257,9 +290,9 @@ public class MetaRenamer {
 			// Add non-meta data items worth pursuing, e.g. filename, extension.
 			String resourceName = metadata.get( Metadata.RESOURCE_NAME_KEY );
 		    String fileName = resourceName.substring( resourceName.lastIndexOf( File.separator ) + 1 );
-		    metadata.add( ADDITIONAL_GENERICDATA_KEY_FILENAME, fileName ); 
+		    metadata.add( ADDITIONAL_DATA_KEY_FILENAME, fileName ); 
 		    String extension = fileName.substring( fileName.lastIndexOf( "." ) + 1 );
-		    metadata.add( ADDITIONAL_GENERICDATA_KEY_EXTENSION, extension );
+		    metadata.add( ADDITIONAL_DATA_KEY_EXTENSION, extension );
 	    	
 			// Add metadata items based on type - year, artists, mapping of names.
 		    Parser specificParser = defaultParser.getParsers().get( mediaType );
@@ -329,13 +362,10 @@ public class MetaRenamer {
 		    		mediaTypeString.startsWith( "text" ) || 
 		    		mediaTypeString.startsWith( "images" ) || 
 		    		doNotParse.contains( mediaType.toString() ))) { // PDF throws lof4j warnings
-			} else {
-			    // if ( verbose )
-			    //    System.out.println( "   no action: " + "\"" + file + "\", type=\"" + mediaTypeString + "\"" );		    
 			}
 		    
 		   if ( verbose ) {
-			  System.out.println( "   no action: \"" + metadata.get( Metadata.RESOURCE_NAME_KEY ) + "\", type=\"" + mediaType.toString() + "\"" );
+			  System.out.println( "   no action: ignored media type=\"" + mediaType.toString() + "\", resource=\"" + metadata.get( Metadata.RESOURCE_NAME_KEY ) + "\"" );
 		   }
 		}	
 	}

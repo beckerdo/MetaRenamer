@@ -45,12 +45,17 @@ public class MetaUtils {
 		    metadata.set( "xmpDM:albumArtist", metadata.get( "xmpDM:artist" ) );
 	    }
 	    
-	    // mapping, transformation
+	    // TODO mapping, transformation
 	    // e.g. albumArtist "Various Artists" to "Various"
 	    // e.g. "Compilation" to "Various"
+	    if (( null != albumArtist )) {
+	    	if ( albumArtist.contains( "rtist")) {
+	    		System.out.println( "   albumArtist=\"" + albumArtist + "\"" );
+	    	}
+	    	
+	    }
 	}
-	
-	
+		
 	/** 
 	 * Updates and cleans Metadata "xmpDM:trackNumber", if present.
 	 * Converts 1/6 to 1. 
