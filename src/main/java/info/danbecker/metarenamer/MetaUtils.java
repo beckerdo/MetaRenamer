@@ -42,17 +42,21 @@ public class MetaUtils {
 
 	    String albumArtist = metadata.get( "xmpDM:albumArtist" );
 	    if ((null == albumArtist ) || ( albumArtist.length() == 0)) {
+	    	albumArtist = metadata.get( "xmpDM:artist" );
 		    metadata.set( "xmpDM:albumArtist", metadata.get( "xmpDM:artist" ) );
 	    }
 	    
-	    // TODO mapping, transformation
+	    // Mapping, transformation
 	    // e.g. albumArtist "Various Artists" to "Various"
 	    // e.g. "Compilation" to "Various"
 	    if (( null != albumArtist )) {
-	    	if ( albumArtist.contains( "rtist")) {
-	    		System.out.println( "   albumArtist=\"" + albumArtist + "\"" );
+	    	if ("Various Artists".equals(albumArtist)) {
+			    metadata.set( "xmpDM:albumArtist", "Various" );
+	    	} else if ("Various artists".equals(albumArtist)) { 
+			    metadata.set( "xmpDM:albumArtist", "Various" );
+	    	} else if ( albumArtist.contains( "rtist")) {
+	    		System.err.println( "   albumArtist=\"" + albumArtist + "\"" );
 	    	}
-	    	
 	    }
 	}
 		

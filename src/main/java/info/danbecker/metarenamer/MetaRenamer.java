@@ -19,13 +19,13 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.cli.BasicParser;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
-
 import org.apache.tika.config.TikaConfig;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
@@ -73,12 +73,14 @@ public class MetaRenamer {
 	// statistics
     public static int filesVisited = 0;
     public static int filesRenamed = 0;
-    public static int filesCollided = 0;
     public static int filesCreated = 0;
+    public static int filesCollided = 0;
+    public static int filesMissingMetadata = 0;
     public static int dirsVisited = 0;
     public static int dirsRenamed = 0;
-    public static int dirsCollided = 0;
     public static int dirsCreated = 0;
+    public static int dirsCollided = 0;
+    public static int dirsMissingMetadata = 0;
 
     // Tika instance vars
     public static TikaConfig tikaConfig;
@@ -95,6 +97,7 @@ public class MetaRenamer {
 	/** Commmand line version of this application. */
 	public static void main(String[] args) throws Exception {
 	    System.out.println( "MetaRenamer 1.0 by Dan Becker" );
+	    long startTime = System.currentTimeMillis();
 	    
 	    // Parse the command line arguments
 		Options cliOptions = createOptions();
@@ -140,9 +143,11 @@ public class MetaRenamer {
 	    checkPath( destPath, EnumSet.of( EXISTS, READABLE, WRITABLE, DIRECTORY ), EnumSet.of( CREATE )  );	    
 	    if( line.hasOption( "glob" ) ) {
 	    	fileGlob  = line.getOptionValue( "glob" );
-	    	// Strange Windows * bug. 
-	    	if ( ".classpath".equals( fileGlob )) 
-	    		fileGlob = "*";
+	    	// Strange Eclipse Windows bug. Asterisks are expanded even when quoted. Will allow @ as * replacement.  
+	    	if (( null != fileGlob ) && fileGlob.contains("@")) {
+	    		System.out.println( "   replacing glob @ with *" );
+	    		fileGlob = fileGlob.replace("@", "*");
+	    	}
 	    	if ( verbose ) {
 	    		System.out.println( "   path glob pattern=\"" + fileGlob + "\"" );
 	    	}
@@ -196,6 +201,7 @@ public class MetaRenamer {
 	            	try {
 						MetaRenamer.fileVisitor( file.toString() );
 					} catch (Exception e) {
+						System.err.println( "   exception=" + e.getMessage());
 						e.printStackTrace();
 					}
 		        } else if (attr.isSymbolicLink()) {
@@ -213,12 +219,12 @@ public class MetaRenamer {
 		    		Path name = dir.getFileName();
 		    		if (name != null)  {
 		    			if ( matcher.matches(name) ) {
-		    				if (( verbose ) && !( "*".equals( fileGlob ))) 
-		    					System.out.println("   sourcePath child \"" + name + "\" matches glob." );
+		    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
+		    				//	System.out.println("   sourcePath child \"" + name + "\" matches glob." );
 		    				return FileVisitResult.CONTINUE;
 		    			} else {
-		    				if (( verbose ) && !( "*".equals( fileGlob ))) 
-		                	   System.out.println("   sourcePath child \"" + name + "\" does not match glob." );
+		    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
+		                	//   System.out.println("   sourcePath child \"" + name + "\" does not match glob." );
 		    		        return FileVisitResult.SKIP_SUBTREE;							    				
 		    			}
 		    		}
@@ -234,11 +240,24 @@ public class MetaRenamer {
 		} );
 
 		// conclude and end
-		if (!quiet)
-	       System.out.println( "files visited/renamed/collided/created " + filesVisited + "/" + filesRenamed + "/" + filesCollided + "/" + filesCreated + 
-	    		   ", dirs visited/renamed/collided/created " + dirsVisited + "/" + dirsRenamed + "/" + dirsCollided + "/" + dirsCreated + "." );
+		if (!quiet) {
+	       System.out.println( "files visited/renamed/created/collided/missing " + filesVisited + "/" + filesRenamed + "/" + filesCreated + "/" + filesCollided + "/" + filesMissingMetadata + 
+	    		   ", dirs visited/renamed/created/collided/missing " + dirsVisited + "/" + dirsRenamed + "/" + dirsCreated + "/" + dirsCollided + "/" + dirsMissingMetadata + "." );
+	       long elapsedTime = System.currentTimeMillis() - startTime;
+	       System.out.println( "elapsed time=" + format( elapsedTime ));       
+		}
 	}
-
+	
+	// For example, to convert 10 minutes to milliseconds, use: TimeUnit.MILLISECONDS.convert(10L, TimeUnit.MINUTES)
+    public static String format(long durationMillis) {
+        if (durationMillis == 0) return "00:00:00,000";
+        long hours = TimeUnit.HOURS.convert( durationMillis, TimeUnit.MILLISECONDS );
+        long mins = TimeUnit.MINUTES.convert( durationMillis, TimeUnit.MILLISECONDS );
+        long secs = TimeUnit.SECONDS.convert( durationMillis, TimeUnit.MILLISECONDS );
+        long millis = TimeUnit.MILLISECONDS.convert( durationMillis % 1000L, TimeUnit.MILLISECONDS );
+        return String.format("%02d:%02d:%02d.%03d", hours, mins, secs, millis);        
+    }
+    
 	/** Command line options for this application. */
 	public static Options createOptions() {
 		// create the Options
@@ -310,13 +329,23 @@ public class MetaRenamer {
 			Path oldPath = Paths.get( oldName );
 	    
 		    // Propose a new pattern.
-		    String proposedName = new String( pattern ); 
+		    String proposedName = new String( pattern );
+		    int emptyCount = 0;
 			for ( String key: patternKeyNames ) {
 				String value = metadata.get( key );
 				// System.out.println( "   key=" + key + ", value=" + value);
-				if ( null == value ) value = ""; 
+				if (( null == value ) || (value.length() == 0)) {
+					// System.err.println( "   missing key=" + key );
+					emptyCount++;
+					value = ""; 
+				}
 			    value = MetaUtils.escapeChars( value );
 				proposedName = proposedName.replaceAll( key , value );
+			}
+			if ( emptyCount > 0 ) {
+				System.err.println( "   missing metadata oldName=\"" + oldName + "\", proposedName=\"" + proposedName + "\" missing " + emptyCount + " out if " + patternKeyNames.length + " fields.");
+				filesMissingMetadata++;
+				return;
 			}
 			
 		    Path proposedPath = Paths.get( destPath, proposedName );

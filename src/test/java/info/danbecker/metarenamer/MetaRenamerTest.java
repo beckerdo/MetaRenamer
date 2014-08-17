@@ -3,7 +3,6 @@ package info.danbecker.metarenamer;
 import info.danbecker.metarenamer.MetaRenamer.FileAction;
 import static info.danbecker.metarenamer.MetaRenamer.FileAction.*;
 import static info.danbecker.metarenamer.FileAttribute.*;
-import static java.nio.file.StandardCopyOption.*;
 
 import java.io.File;
 import java.io.IOException;
@@ -183,6 +182,7 @@ public class MetaRenamerTest {
 		assertTrue( "moved directory size compare", newMoveSize > oldMoveSize );
 		assertEquals( "moved directory exact size",  919522, newMoveSize );
 
+		@SuppressWarnings("unused")
 		long newCopySize = MetaUtils.recursiveSize( copyPath.toFile() );
 		// System.out.println( "   oldCopySize=" + oldCopySize + ", newCopySize=" + newCopySize );
 		// assertTrue( "moved directory size compare", newCopySize < oldCopySize );
