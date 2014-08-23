@@ -37,6 +37,16 @@ import org.xml.sax.helpers.DefaultHandler;
 
 /**
  * An app to rename files based on metadata in the file.
+ * <p>
+ * TODO
+ * 1. Double directory
+ * -v -t -m -l 2000 -s "E:\audio\DansMusic\Patty Griffin" -g "Living*"
+ *    action: rename "E:\audio\DansMusic\Patty Griffin\Living with Ghosts\01 Moses.m4a" to
+ *     "E:\audio\DansMusic\Patty Griffin\Patty Griffin\1996 - Living with Ghosts\Patty Griffin - 1996 - Living with Ghosts - 01 - Moses.m4a".
+ * 2. Cannot handle \ at end of source dest directories
+ * 3. Update via timestamp rather than pattern?
+ * 
+ * 
  * @author <a href="mailto://dan@danbecker.info>Dan Becker</a>
  */
 public class MetaRenamer {
