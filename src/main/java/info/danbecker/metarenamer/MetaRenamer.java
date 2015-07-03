@@ -5,6 +5,8 @@ import static info.danbecker.metarenamer.MetaRenamer.FileAction.*;
 import static java.nio.file.StandardCopyOption.*;
 
 import java.io.File;
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -99,7 +101,7 @@ public class MetaRenamer {
     public static ParseContext parseContext;
     public static PathMatcher matcher;
     
-	public static Set<String> doNotParse = new TreeSet<String>( Arrays.asList("application/pdf") );
+	public static Set<String> doNotParse = new TreeSet<String>();
 	// A cache of paths, so that collision count does not increment.
 	public static Set<String> checkedPaths = new TreeSet<String>();
 	public static boolean cachePaths = true;
@@ -189,7 +191,10 @@ public class MetaRenamer {
 	    } else {
 	    	pattern = PATTERN_DEFAULT;	    	
 	    }
-
+	    
+	    // Init things
+	    MetaRenamer.readDoNotParse( "src/main/resources/doNotParse.txt ", doNotParse);
+	    
 	    // Init Tika variables
 	    tikaConfig = new TikaConfig();
 	    defaultParser = (DefaultParser) tikaConfig.getParser();
@@ -396,16 +401,11 @@ public class MetaRenamer {
 		    
 		// } else if ( "audio/x-wav".equals( mediaType.toString() )) {			
 		} else {
-		    // Perhaps check parent dir, list all files, stick with one with metadata.
-		    if ( !(mediaTypeString.startsWith( "application" ) || 
-		    		mediaTypeString.startsWith( "text" ) || 
-		    		mediaTypeString.startsWith( "images" ) || 
-		    		doNotParse.contains( mediaType.toString() ))) { // PDF throws lof4j warnings
+			if ( MetaRenamer.doNotParseStartsWith(doNotParse, mediaTypeString )) {
+			   if ( verbose ) {
+				  System.out.println( "   no action: ignored media type=\"" + mediaType.toString() + "\", resource=\"" + metadata.get( Metadata.RESOURCE_NAME_KEY ) + "\"" );
+			   }				
 			}
-		    
-		   if ( verbose ) {
-			  System.out.println( "   no action: ignored media type=\"" + mediaType.toString() + "\", resource=\"" + metadata.get( Metadata.RESOURCE_NAME_KEY ) + "\"" );
-		   }
 		}	
 	}
 	
@@ -500,5 +500,33 @@ public class MetaRenamer {
 			return false;
 					
 		return checkPath( Paths.get( pattern ), attrs, actions );
-	}	
+	}
+	
+	/** Reads strings from the given file path. Places in the given set. */
+	public static void readDoNotParse( String fileName, Set<String> doNotParse ) 
+			throws IOException {
+		File file = new File( fileName );
+		if ( !file.exists() || !file.isFile() || !file.canRead() )
+			return;
+		
+		try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+		    String line;
+		    while ((line = br.readLine()) != null) {
+		       if ( !line.startsWith("//") ) {
+			       line = line.trim();
+			       if ( line.length() > 0 )
+			    	   doNotParse.add( line );
+		       }
+		    }
+		}
+	}
+
+	/** Tests if the testString starts with any String in the given set. */
+	public static boolean doNotParseStartsWith( final Set<String> doNotParse, String testString ) {
+		for( String doNotParseString : doNotParse ) {
+			if ( testString.startsWith( doNotParseString ))
+				return true;
+		}
+		return false;
+	}
 }

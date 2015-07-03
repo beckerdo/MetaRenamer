@@ -10,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.EnumSet;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,7 +122,7 @@ public class MetaRenamerTest {
 		assertEquals( "files collided", 0, MetaRenamer.filesCollided );
 		assertEquals( "files renamed", 0, MetaRenamer.filesRenamed );
 		assertEquals( "files created", 0, MetaRenamer.filesCreated );
-		assertEquals( "dirs visited", 6, MetaRenamer.dirsVisited );
+		assertEquals( "dirs visited", 4, MetaRenamer.dirsVisited );
 		assertEquals( "dirs collided", 0, MetaRenamer.dirsCollided );
 		assertEquals( "dirs renamed", 0, MetaRenamer.dirsRenamed );
 		assertEquals( "dirs created", 0, MetaRenamer.dirsCreated );
@@ -239,5 +241,28 @@ public class MetaRenamerTest {
 		long cleanSize = MetaUtils.recursiveSize( copyPath.toFile() );
 		assertEquals( "cleaned copy directory exact size", 0, cleanSize );
 	}
+
+	@Test
+	public void testLoadDoNotParse() throws IOException {
+		Set<String> doNotParse = new TreeSet<String>();
+		assertEquals( "doNotParse size",  0, doNotParse.size() );
+		
+		MetaRenamer.readDoNotParse( "src/test/resources/doNotParse.txt" , doNotParse);
+		assertEquals( "doNotParse size",  3, doNotParse.size() );
+	}
 	
+	@Test
+	public void testDoNotParse() throws IOException {
+		Set<String> doNotParse = new TreeSet<String>();
+		assertEquals( "doNotParse size",  0, doNotParse.size() );
+		
+		MetaRenamer.readDoNotParse( "src/test/resources/doNotParse.txt" , doNotParse);
+		assertEquals( "doNotParse size",  3, doNotParse.size() );
+		
+		assertEquals( "doNotParse test",  true, MetaRenamer.doNotParseStartsWith( doNotParse, "images/jpg" ) );
+		assertEquals( "doNotParse test",  true, MetaRenamer.doNotParseStartsWith( doNotParse, "application/pdf" ) );
+		assertEquals( "doNotParse test", false, MetaRenamer.doNotParseStartsWith( doNotParse, "audio/mp3" ) );
+		assertEquals( "doNotParse test", false, MetaRenamer.doNotParseStartsWith( doNotParse, "" ) );
+	}
+
 }

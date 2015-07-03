@@ -1,0 +1,6 @@
+// The following media types are ignored by the file visitor.
+// Media types are tested against these strings via startsWith
+// For example is mediaType.startsWith( "application") then ignored.
+application
+images
+text
