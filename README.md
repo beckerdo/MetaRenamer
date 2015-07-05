@@ -12,18 +12,19 @@ Clone the repository and build it with "mvn package".
 add the Maven Central repository to your Maven settings.xml (http://central.sonatype.org/pages/consumers.html#apache-maven).
    - The project must be compiled with Java 7 environment.
    - If the build fails because of tests, try the command line option "-DskipTests".
-
+<p>
 Run as a Java class with provided/built JAR file:
 <code>
 <pre>
    java -jar target\MetaRenamer-1.0.0-SNAPSHOT.jar info.danbecker.metarenamer.MetaRenamer <options> 
 </pre>
 </code>
-
+<p>
 For help use option "-h":
 <code>
 <pre>
    java -jar target\MetaRenamer-1.0.0-SNAPSHOT.jar info.danbecker.metarenamer.MetaRenamer -h 
+ -a,--action                  perform actions. Without this, the app reports whathat would happen.
  -d,--destinationPath <arg>   desination path for file search. The default
                               is the source directory.
  -g,--glob <arg>              file name pattern matching glob
@@ -36,19 +37,20 @@ For help use option "-h":
  -q,--quiet                   mute all logging including title and stats.
  -s,--sourcePath <arg>        starting path for file search. The default
                               is the local directory for the app.
- -t,--test                    do not perform actions, just list what would
-                              happen.
- -v,--verbose                 prints many more messages to the console
-                              than normal.
+ -t.--time <arg>			  limit actions to given datetime stamps. Form is <comparator><datetime>
+ 						      for example LT2015-07-04, GE2015-01-01, or EQ2015-04-01
+ -v,--verbose                 prints many more messages to the console than normal.
 </pre>
 </code>
-
+<p>
 The most common options are source directory (option "-s") and destination directory (option "-d").
-For test mode use option "-t". Test mode states actions without actually doing anything:
+Verbose mode "-v" is used to print detailed steps.
+Action mode "-a" is used to perform action, otherwise the app tells you what it would do.
 <code>
 <pre>
-   java -jar target/MetaRenamer-1.0.0-SNAPSHOT.jar info.danbecker.metarenamer.MetaRenamer -t -v -s "e:/audio/AmazonMP3" -d "."
-   java -jar target/MetaRenamer-1.0.0-SNAPSHOT.jar info.danbecker.metarenamer.MetaRenamer -t -v -s "src/test/resources/info/danbecker/metarenamer/rhythmpatterns"
+   java -jar target/MetaRenamer-1.0.0-SNAPSHOT.jar info.danbecker.metarenamer.MetaRenamer -v -s "e:/audio/CDs" -d "."
+   java -jar target/MetaRenamer-1.0.0-SNAPSHOT.jar info.danbecker.metarenamer.MetaRenamer -v -s "src/test/resources/info/danbecker/metarenamer/rhythmpatterns"
+   java -jar target/MetaRenamer-1.0.0-SNAPSHOT.jar -v -s "e:/audio/CDs" -d "." -t "GE2015-07-01"
 </pre>
 </code>
 

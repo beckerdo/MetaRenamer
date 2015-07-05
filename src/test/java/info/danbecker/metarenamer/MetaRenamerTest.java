@@ -15,10 +15,16 @@ import java.util.TreeSet;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.joda.time.LocalDateTime;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
 
 public class MetaRenamerTest {
 	
@@ -27,7 +33,6 @@ public class MetaRenamerTest {
 	
 	@Test
     public void testCheckPath() throws IOException {
-		MetaRenamer.testMode = true;
 		MetaRenamer.verbose = true;
 		boolean result = false;
 
@@ -62,7 +67,6 @@ public class MetaRenamerTest {
 
 	@Test
     public void testCheckPathActions() throws IOException {
-		MetaRenamer.testMode = true;
 		MetaRenamer.verbose = false;
 		boolean result = false;
 
@@ -71,7 +75,7 @@ public class MetaRenamerTest {
 			EnumSet.of( EXISTS, READABLE, WRITABLE, FILE ), EnumSet.of( CREATE )  );	
 		assertTrue( "blah.txt test mode not created", !result );
 
-		MetaRenamer.testMode = false;
+		MetaRenamer.actionMode = true;
 		MetaRenamer.verbose = true;
 		
 		// Text file create
@@ -265,4 +269,79 @@ public class MetaRenamerTest {
 		assertEquals( "doNotParse test", false, MetaRenamer.doNotParseStartsWith( doNotParse, "" ) );
 	}
 
+	@Test
+	public void testReadDateTime() {
+		// Happy paths
+		assertEquals( "dateTime",  MetaRenamer.Comparator.FALSE, MetaRenamer.dateTimeComparator );
+		assertNull( "dateTime",  MetaRenamer.dateTimeCompare );
+		
+		DateTimeFormatter f = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss");				
+
+		LocalDateTime dateTimeExpected = f.parseLocalDateTime( "2012-01-10T23:13:26" );
+		MetaRenamer.readDateTime( "GT2012-01-10T23:13:26");
+		assertEquals( "dateTime",  MetaRenamer.Comparator.GT, MetaRenamer.dateTimeComparator );
+		assertEquals( "dateTime",  dateTimeExpected.toDate(), MetaRenamer.dateTimeCompare );
+
+		f = DateTimeFormat.forPattern("yyyy-MM-dd");				
+		
+		dateTimeExpected = f.parseLocalDateTime( "2015-07-04" );
+		MetaRenamer.readDateTime( "LE2015-07-04");
+		assertEquals( "dateTime",  MetaRenamer.Comparator.LE, MetaRenamer.dateTimeComparator );
+		assertEquals( "dateTime",  dateTimeExpected.toDate(), MetaRenamer.dateTimeCompare );
+	
+		// Bad comparator
+		MetaRenamer.readDateTime( "FOO2015-07-04");
+		assertEquals( "dateTime",  MetaRenamer.Comparator.LE, MetaRenamer.dateTimeComparator ); // last one set
+		
+		// Bad date
+		dateTimeExpected = f.parseLocalDateTime( "2015-07-04" );
+		try {
+			MetaRenamer.readDateTime( "EQ2001");
+		} catch ( IllegalArgumentException e ) {
+			assertNotNull( "dateTime",  e );
+			assertEquals( "dateTime",  MetaRenamer.Comparator.EQ, MetaRenamer.dateTimeComparator );
+			assertEquals( "dateTime",  dateTimeExpected.toDate(), MetaRenamer.dateTimeCompare );			
+		}
+
+		// Slashes to dashes
+		dateTimeExpected = f.parseLocalDateTime( "2015-07-01" );
+		MetaRenamer.readDateTime( "LE2015/07/01");
+		assertEquals( "dateTime",  MetaRenamer.Comparator.LE, MetaRenamer.dateTimeComparator );
+		assertEquals( "dateTime",  dateTimeExpected.toDate(), MetaRenamer.dateTimeCompare );
+		dateTimeExpected = f.parseLocalDateTime( "2015-01-01" );
+		// MetaRenamer.readDateTime( "LE2015" + "\\" + "01" + "\\" + "01");
+		// assertEquals( "dateTime",  MetaRenamer.Comparator.LE, MetaRenamer.dateTimeComparator );
+		// assertEquals( "dateTime",  dateTimeExpected.toDate(), MetaRenamer.dateTimeCompare );
+	}
+	
+	@Test
+	public void testTestDateTime() {
+		// Happy paths
+		DateTimeFormatter f = DateTimeFormat.forPattern("yyyy-MM-dd");						
+		LocalDateTime test = f.parseLocalDateTime( "2015-07-04" );
+		MetaRenamer.readDateTime( "FALSE2015-07-04");
+		
+		assertFalse( "dateTime",  MetaRenamer.testDateTime( null, null,  null ) );
+		assertFalse( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.Comparator.FALSE, null, null ) );
+		assertTrue( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.Comparator.TRUE, null, null ) );
+		assertFalse( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.Comparator.EQ, null, test.toDate() ) );
+		assertFalse( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.Comparator.EQ, test.toDate(), null ) );
+
+		MetaRenamer.readDateTime( "EQ2015-07-04");
+		assertTrue( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, test.toDate() ) );
+		test = f.parseLocalDateTime( "2015-07-05" );
+		assertFalse( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, test.toDate() ) );
+		MetaRenamer.readDateTime( "NE2015-07-04");
+		assertTrue( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, test.toDate() ) );
+
+		test = f.parseLocalDateTime( "2015-07-05" );
+		MetaRenamer.readDateTime( "GT2015-07-04");
+		assertTrue( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, test.toDate() ) );
+		MetaRenamer.readDateTime( "GE2015-07-04");
+		assertTrue( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, test.toDate() ) );
+		MetaRenamer.readDateTime( "LT2015-07-04");
+		assertFalse( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, test.toDate() ) );
+		MetaRenamer.readDateTime( "LE2015-07-04");
+		assertFalse( "dateTime",  MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, test.toDate() ) );
+	}
 }

@@ -17,11 +17,12 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
-import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.Date;
+import java.text.SimpleDateFormat;
 
 import org.apache.commons.cli.BasicParser;
 import org.apache.commons.cli.CommandLine;
@@ -35,6 +36,9 @@ import org.apache.tika.mime.MediaType;
 import org.apache.tika.parser.DefaultParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
+import org.joda.time.LocalDateTime;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
 import org.xml.sax.helpers.DefaultHandler;
 
 /**
@@ -42,16 +46,17 @@ import org.xml.sax.helpers.DefaultHandler;
  * <p>
  * TODO
  * 1. Double directory
- * -v -t -m -l 2000 -s "E:\audio\DansMusic\Patty Griffin" -g "Living*"
+ * -v -m -l 2000 -s "E:\audio\DansMusic\Patty Griffin" -g "Living*"
  *    action: rename "E:\audio\DansMusic\Patty Griffin\Living with Ghosts\01 Moses.m4a" to
  *     "E:\audio\DansMusic\Patty Griffin\Patty Griffin\1996 - Living with Ghosts\Patty Griffin - 1996 - Living with Ghosts - 01 - Moses.m4a".
  * 2. Cannot handle \ at end of source dest directories
- * 3. Update via timestamp rather than pattern?
- * 
+ * 3. Get test cases passing.
  * 
  * @author <a href="mailto://dan@danbecker.info>Dan Becker</a>
  */
 public class MetaRenamer {
+	public static final SimpleDateFormat DEFAULT_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+	
 	public static final String PATTERN_DELIMITER = "/";
 	public static final String PATTERN_DEFAULT = "xmpDM:albumArtist/xmpDM:releaseYear - xmpDM:album/xmpDM:artist - xmpDM:releaseYear - xmpDM:album - xmpDM:trackNumber - title.extension";
 
@@ -64,10 +69,14 @@ public class MetaRenamer {
 		UPDATE,
 	};
 
+	public enum Comparator {
+		EQ, NE, LT, LE, GT, GE, TRUE, FALSE,
+	};
+
 	public static final String MEDIATYPE_KEY = MediaType.class.getSimpleName();	
 	
 	// options
-	public static boolean testMode = false;
+	public static boolean actionMode = false;
 	public static String msgPrefix = "   action: ";
 	public static boolean verbose = false;
 	public static boolean debug = false;
@@ -77,6 +86,8 @@ public class MetaRenamer {
 	public static boolean quiet = false;
 	public static boolean moveTrueCopyFalse = false;
 	public static int filesLimit = Integer.MAX_VALUE;
+	public static Comparator dateTimeComparator = Comparator.FALSE;
+	public static Date dateTimeCompare = null;
 	
 	public static String pattern; // pattern in string form with N path delimiters
 	public static String [] patterns; // pattern broken up by path delimiters. [...,parent2,parent1,parent0,filename]
@@ -126,33 +137,40 @@ public class MetaRenamer {
 	    	verbose = true;	
 	    	System.out.println( "   running in verbose mode");
 	    }	    
-	    if( line.hasOption( "debug" ) ) {
-	    	debug = true;	
-	    	System.out.println( "   running in debug mode");
-	    }	    
-	    if( line.hasOption( "test" ) ) {
-	    	testMode = true;	
+	    if( line.hasOption( "action" ) ) {
+	    	actionMode = true;	
 	    	// this.fileName = line.getOptionValue( "fileName" );
 	    	if ( verbose )
 	    		System.out.println( "   running in test mode");
 	    }	    
-		msgPrefix = testMode ? "   proposed action: " : "   action: "; 
+	    if( line.hasOption( "debug" ) ) {
+	    	debug = true;	
+	    	System.out.println( "   running in debug mode");
+	    }	    
+		msgPrefix = actionMode ? "   action: " : "   proposed: "; 
 	    if( line.hasOption( "sourcePath" ) ) {
 	    	sourcePath = line.getOptionValue( "sourcePath" );
 	    	if ( verbose ) {
-	    		System.out.println( "   source path=" + Paths.get( sourcePath ));
+	    		System.out.println( "   source path=\"" + Paths.get( sourcePath ) + "\"" );
 	    	}
 	    }	    
 	    checkPath( sourcePath, EnumSet.of( EXISTS, READABLE, DIRECTORY ), EnumSet.noneOf( FileAction.class ) );
 	    if( line.hasOption( "destinationPath" ) ) {
 	    	destPath  = line.getOptionValue( "destinationPath" );
 	    	if ( verbose ) {
-	    		System.out.println( "   destination path=" + Paths.get( destPath ));
+	    		System.out.println( "   destination path=\"" + Paths.get( destPath ) + "\"");
 	    	}
 	    } else {
 	    	destPath = sourcePath;
 	    }
 	    checkPath( destPath, EnumSet.of( EXISTS, READABLE, WRITABLE, DIRECTORY ), EnumSet.of( CREATE )  );	    
+	    if( line.hasOption( "time" ) ) {
+	    	String option = line.getOptionValue( "time" );
+	    	MetaRenamer.readDateTime(option);
+	    	if ( verbose ) {
+	    		System.out.println( "   time comparison=" + MetaRenamer.dateTimeComparator + ", datetime=" + DEFAULT_DATE_FORMAT.format( MetaRenamer.dateTimeCompare ) );
+	    	}
+	    }
 	    if( line.hasOption( "glob" ) ) {
 	    	fileGlob  = line.getOptionValue( "glob" );
 	    	// Strange Eclipse Windows bug. Asterisks are expanded even when quoted. Will allow @ as * replacement.  
@@ -206,36 +224,72 @@ public class MetaRenamer {
 	    matcher = FileSystems.getDefault().getPathMatcher("glob:" + fileGlob );	    
 		Files.walkFileTree( Paths.get( sourcePath ), new SimpleFileVisitor<Path>() {
 		    @Override
-		    public FileVisitResult visitFile(Path file, BasicFileAttributes attr) {
-				if ( filesVisited >= filesLimit ) {
-			        return FileVisitResult.TERMINATE;					
-				}
-		    	
+		    public FileVisitResult visitFile(Path path, BasicFileAttributes attr) {
 		        if (attr.isRegularFile()) {
+					// System.out.println("   file=\"" + path.getFileName() + "\", isFile=" + attr.isRegularFile() + ", isDirectory=" + attr.isDirectory() );
+					if (!attr.isDirectory()) {
+						filesVisited++;
+						if (filesVisited >= filesLimit) {
+							if (verbose) {
+								System.out.println("   files visited limit reached \"" + filesLimit + "\".");
+							}
+							return FileVisitResult.TERMINATE;
+						}
+					}
+						
+			    	
 		            // System.out.format("Regular file: %s%n", file);
+    				// Check lastModified
+    				if ( null != MetaRenamer.dateTimeCompare ) {
+    					File file = path.toFile();
+    					boolean useIt = MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, new Date( file.lastModified() ) ); 
+	    				// System.out.println("   file=\"" + file.getName() + "\"" + ", datetime \"" + DEFAULT_DATE_FORMAT.format( new Date( file.lastModified() )) + "\" " + 
+	    				//    MetaRenamer.dateTimeComparator.toString() + DEFAULT_DATE_FORMAT.format( MetaRenamer.dateTimeCompare ) + ", continue=" + useIt);
+    					if ( !useIt ) {
+		    		        return FileVisitResult.SKIP_SUBTREE;
+    					}
+    				}
 	            	try {
-						MetaRenamer.fileVisitor( file.toString() );
+						MetaRenamer.fileVisitor( path.toFile() );
 					} catch (Exception e) {
 						System.err.println( "   exception=" + e.getMessage());
 						e.printStackTrace();
 					}
 		        } else if (attr.isSymbolicLink()) {
-			        System.out.format( "   will not follow symbolic link: %s%n", file );
+			        System.out.format( "   will not follow symbolic link: %s%n", path );
 		        } else {
-		            System.out.format( "   will not follow other file: %s%n", file );
+		            System.out.format( "   will not follow other file: %s%n", path );
 		        }
 		        return FileVisitResult.CONTINUE;
 		    }
+		    
 		    @Override
 		    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
 		    	// Only run glob on direct children of sourcePath.
 		    	// System.out.println( "   parent=\"" + dir.getParent().toString() + "\", equals=" + dir.getParent().toString().equals( sourcePath ) + ", compareTo=" + dir.getParent().compareTo( Paths.get( sourcePath )));
+				if (attrs.isDirectory()) {
+					// System.out.println("   file=\"" + dir.getFileName() + "\", isFile=" + attrs.isRegularFile() + ", isDirectory=" + attrs.isDirectory() );
+					dirsVisited++;
+				}
+		    	
 		    	if ( dir.getParent().toString().equals( sourcePath )) {
 		    		Path name = dir.getFileName();
 		    		if (name != null)  {
 		    			if ( matcher.matches(name) ) {
 		    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
 		    				//	System.out.println("   sourcePath child \"" + name + "\" matches glob." );
+		    				// Check lastModified
+		    				if ( null != MetaRenamer.dateTimeCompare ) {
+		    					File file = dir.toFile();
+		    					boolean useIt = MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, new Date( file.lastModified() ) ); 
+			    				// System.out.println("   file=\"" + file.getName() + "\"" + ", datetime \"" + DEFAULT_DATE_FORMAT.format( new Date( file.lastModified() )) + "\" " + 
+				    			// MetaRenamer.dateTimeComparator.toString() + DEFAULT_DATE_FORMAT.format( MetaRenamer.dateTimeCompare ) + ", continue=" + useIt);
+		    					if ( useIt ) {
+		    						return FileVisitResult.CONTINUE;
+		    					} else {
+				    		        return FileVisitResult.SKIP_SUBTREE;
+		    					}
+		    				}
 		    				return FileVisitResult.CONTINUE;
 		    			} else {
 		    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
@@ -246,7 +300,8 @@ public class MetaRenamer {
 		    	}
 	    		// System.out.println("   not child \"" + dir.getFileName() + "\" matches glob." );
             	return FileVisitResult.CONTINUE;		    		
-		    }		        
+		    }
+		    
 		    // @Override
 		    // public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
 		    // 	// System.out.println( "   done visiting \"" + dir.toString() + "\"" );
@@ -256,8 +311,8 @@ public class MetaRenamer {
 
 		// conclude and end
 		if (!quiet) {
-	       System.out.println( "files visited/renamed/created/collided/missing " + filesVisited + "/" + filesRenamed + "/" + filesCreated + "/" + filesCollided + "/" + filesMissingMetadata + 
-	    		   ", dirs visited/renamed/created/collided/missing " + dirsVisited + "/" + dirsRenamed + "/" + dirsCreated + "/" + dirsCollided + "/" + dirsMissingMetadata + "." );
+		   System.out.println( "dirs visited/renamed/created/collided/missing " + dirsVisited + "/" + dirsRenamed + "/" + dirsCreated + "/" + dirsCollided + "/" + dirsMissingMetadata + "." );
+		   System.out.println( "files visited/renamed/created/collided/missing " + filesVisited + "/" + filesRenamed + "/" + filesCreated + "/" + filesCollided + "/" + filesMissingMetadata ); 
 	       long elapsedTime = System.currentTimeMillis() - startTime;
 	       System.out.println( "elapsed time=" + format( elapsedTime ));       
 		}
@@ -265,7 +320,7 @@ public class MetaRenamer {
 	
 	// For example, to convert 10 minutes to milliseconds, use: TimeUnit.MILLISECONDS.convert(10L, TimeUnit.MINUTES)
     public static String format(long durationMillis) {
-        if (durationMillis == 0) return "00:00:00,000";
+        if (durationMillis == 0) return "00:00:00.000";
         long hours = TimeUnit.HOURS.convert( durationMillis, TimeUnit.MILLISECONDS );
         long mins = TimeUnit.MINUTES.convert( durationMillis, TimeUnit.MILLISECONDS );
         long secs = TimeUnit.SECONDS.convert( durationMillis, TimeUnit.MILLISECONDS );
@@ -278,9 +333,8 @@ public class MetaRenamer {
 		// create the Options
 		Options options = new Options();
 		options.addOption( "h", "help", false, "print the command line options." );
-		options.addOption( "t", "test", false, "do not perform actions, just list what would happen." );
-		options.addOption( "v", "verbose", false, "prints many more messages to the console than normal." );
-		options.addOption( "d", "debug", false, "prints many more messages to the console than verbose." );
+		options.addOption( "a", "action", false, "perform actions, otherwise just list what would happen." );
+		options.addOption( "b", "debug", false, "prints many more messages to the console than verbose." );
 		options.addOption( "s", "sourcePath", true, "starting path for file search. The default is the local directory for the app." );
 		options.addOption( "d", "destinationPath", true, "desination path for file search. The default is the source directory." );
 		options.addOption( "g", "glob", true, "file name pattern matching glob (http://docs.oracle.com/javase/tutorial/essential/io/fileOps.html#glob)." );
@@ -288,19 +342,13 @@ public class MetaRenamer {
 		options.addOption( "m", "move", false, "move renamed files rather than copy them." );
 		options.addOption( "q", "quiet", false, "mute all logging including title and stats." );
 		options.addOption( "l", "limit", true, "end after visiting <limit> file count." );
+		options.addOption( "t", "time", true, "accepts if file compares to given datetime (for example \"GE2015-01-01\" or \"EQ2015-04-15\")." );
+		options.addOption( "v", "verbose", false, "prints many more messages to the console than normal." );
 		return options;
 	}
 
 	/** A callback method from the file/directory visitor. */
-	public static void fileVisitor( String fileName ) throws Exception  {
-		filesVisited++;
-		if ( filesVisited >= filesLimit ) {
-	    	if ( verbose ) {
-	    		System.out.println( "   files visited limit reached \"" + filesLimit + "\"." );
-	    	}
-	    	return;			
-		}
-		File file = new File(fileName);
+	public static void fileVisitor( File file ) throws Exception  {
 		if ( !file.exists() || !file.canRead()) {
             System.out.println( "   file does not exist,readable" + file.getName() );
             return;
@@ -383,7 +431,7 @@ public class MetaRenamer {
 		    			System.out.println( msgPrefix + "copy \"" + oldPath + "\" to\n      \"" + proposedPath + "\"." );
 		    	}
 		    	
-		    	if ( !testMode ) {	    		
+		    	if ( actionMode ) {	    		
 		    		// Move file
 		    		if ( moveTrueCopyFalse ) {
 		    			// This System.gc() call is required in JDK 7_60 and JDK 8_05
@@ -425,13 +473,14 @@ public class MetaRenamer {
 			    System.out.println( "   checkPath currentFile=\"" + currentFile.getPath() + "\", absPath=\"" + currentFile.getAbsolutePath() + "\", attrs=" + MetaUtils.getAttributes(pattern) );
 			if (attrs.contains( EXISTS )) {
 				result &= currentFile.exists();
-		    	if( attrs.contains( FileAttribute.DIRECTORY )) dirsVisited++;
 			}
+			
+			
 			if ( actions.contains( CREATE ) && !currentFile.exists() ) {
 		    	 if (attrs.contains( FileAttribute.FILE )) {
   		            if ( verbose ) 
 				       System.out.println( msgPrefix + "create file=" + currentFile.toString() );
-		    		if ( !testMode ) {
+		    		if ( actionMode ) {
 			    		// currentFile.createNewFile();
 		    		   Files.createFile( path );
 		    		   filesCreated++;
@@ -441,7 +490,7 @@ public class MetaRenamer {
 					if (!checkedPaths.contains(path.toString())) {
 						if (verbose)
 							System.out.println(msgPrefix + "create directory=" + currentFile.toString());
-						if (!testMode) {
+						if (actionMode) {
 							// currentFile.mkdir();
 							Files.createDirectories(path); // will create recursively
 							checkedPaths.add(path.toString());
@@ -454,7 +503,7 @@ public class MetaRenamer {
 			if ( actions.contains( UPDATE ) ) {
 				if ( verbose )
 			    	System.out.println( msgPrefix + "update file=" + currentFile.toString() );
-		        if (!testMode) {
+		        if (actionMode) {
 		        	// currentFile.setLastModified( (new Date()).getTime() );        	  
 		        	Files.setLastModifiedTime( path, FileTime.fromMillis(System.currentTimeMillis()) );
 		        }
@@ -472,7 +521,7 @@ public class MetaRenamer {
 			if ( actions.contains( DELETE ) ) { // only delete bottom most one in path
 				if ( verbose )
 			    	System.out.println( msgPrefix + "delete file=" + currentFile.toString() );
-		        if (!testMode) {
+		        if (actionMode) {
 			    	 if (attrs.contains( FileAttribute.FILE )) 
 		        	    currentFile.delete();
 		        	// Files.delete( currentPath );
@@ -529,4 +578,51 @@ public class MetaRenamer {
 		}
 		return false;
 	}
+	
+	/** Reads datetime comparator and datetime from the given option. */
+	public static void readDateTime( String option  ) {
+		if ( null == option || option.length() < 1 ) return;
+		for ( Comparator comp : EnumSet.allOf( MetaRenamer.Comparator.class) ) {
+			int loc = -1;
+			loc = option.indexOf( comp.toString() );
+			if ( 0 == loc ) {
+				dateTimeComparator = comp;
+				// Strip comparator.
+				option = option.replace( comp.name().toString(), "" );
+				// Convert slashes to dashes
+				option = option.replaceAll( "[/]+", "-");
+				// option = option.replaceAll( "[\\]+", "-");
+
+				// Parse date
+				DateTimeFormatter f = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss");
+				// Try with long format first, short format second.
+				try {
+					LocalDateTime dateTime = f.parseLocalDateTime( option );
+					MetaRenamer.dateTimeCompare = dateTime.toDate();
+				} catch ( IllegalArgumentException e ) {
+					f = DateTimeFormat.forPattern("yyyy-MM-dd");
+					LocalDateTime dateTime = f.parseLocalDateTime( option );
+					MetaRenamer.dateTimeCompare = dateTime.toDate();				
+				}
+			}
+		}
+	}
+
+	/** Tests if the testString starts with any String in the given set. */
+	public static boolean testDateTime( MetaRenamer.Comparator comparator, Date compareDateTime, Date givenDateTime ) {
+		if ( null == comparator ) return false;
+		if ( MetaRenamer.Comparator.FALSE.equals( comparator ) ) return false;
+		if ( MetaRenamer.Comparator.TRUE.equals( comparator ) ) return true;
+		if ( null == compareDateTime || null == givenDateTime ) return false;
+		
+		if ( MetaRenamer.Comparator.LT.equals( comparator ) ) return givenDateTime.getTime() < compareDateTime.getTime(); 
+		if ( MetaRenamer.Comparator.GT.equals( comparator ) ) return givenDateTime.getTime() > compareDateTime.getTime(); 
+		if ( MetaRenamer.Comparator.LE.equals( comparator ) ) return givenDateTime.getTime() <= compareDateTime.getTime(); 
+		if ( MetaRenamer.Comparator.GE.equals( comparator ) ) return givenDateTime.getTime() >= compareDateTime.getTime(); 
+		if ( MetaRenamer.Comparator.EQ.equals( comparator ) ) return givenDateTime.getTime() == compareDateTime.getTime(); 
+		if ( MetaRenamer.Comparator.NE.equals( comparator ) ) return givenDateTime.getTime() != compareDateTime.getTime(); 
+		
+		return false;
+	}
+	
 }
