@@ -19,9 +19,6 @@ import org.apache.tika.metadata.Metadata;
  * @author <a href="mailto://dan@danbecker.info>Dan Becker</a>
  */
 public class MetaUtils {
-	public static final String PATTERN_DELIMITER = "/";
-	public static final String PATTERN_DEFAULT = "xmpDM:albumArtist/xmpDM:releaseYear - xmpDM:album/xmpDM:artist - xmpDM:releaseYear - xmpDM:album - xmpDM:trackNumber - title.extension";
-
 
 	public static void listAllMetadata( Metadata metadata) {
 		// List all metadata
@@ -31,8 +28,11 @@ public class MetaUtils {
 		}
 	}
 	
-	/** Allows the synthesis or clean-up of metadata. 
-	 *  Requires parsed metadata for year, track, artists. */
+	/** 
+	 * Allows the synthesis or clean-up of metadata. 
+	 * Requires parsed metadata for year, track, artists. 
+	 * @oaram someDefaults of the form "key1=value1;key2=value2" 
+	 */
 	public static void updateMetadata( Metadata metadata ) {
 		// synthesis - add new items from existing items
 
@@ -58,24 +58,44 @@ public class MetaUtils {
 	    		System.err.println( "   albumArtist=\"" + albumArtist + "\"" );
 	    	}
 	    }
+
+	    // Fix up missing title.
+	    String title = metadata.get( "title" );
+	    if (( null == title ) || ( title.length() == 0 )) {
+	    	String defaultTitle = metadata.get( MetaRenamer.ADDITIONAL_DATA_KEY_FILENAME );
+	    	if ( null != defaultTitle ) {
+	    	   int extension = defaultTitle.lastIndexOf('.');
+	    	   if ( -1 != extension )
+	    		   defaultTitle = defaultTitle.substring(0, extension );
+	    	   metadata.set( "title", defaultTitle );
+	    	}
+	    }
 	}
 		
 	/** 
 	 * Updates and cleans Metadata "xmpDM:trackNumber", if present.
 	 * Converts 1/6 to 1. 
+	 * If the track number does not exist, add String MetaRenamer.MISSING_TRACK_FILLER
 	 */
 	public static void cleanTrack( Metadata metadata ) {
 		String dirtyTrack = metadata.get( "xmpDM:trackNumber" );
+		boolean update = false;
 		if (( null != dirtyTrack ) && ( dirtyTrack.length() > 0 )){ 
 			int loc = dirtyTrack.indexOf( "/" );
-			if( -1 != loc ) {
+			if ( -1 != loc ) {
 				dirtyTrack = dirtyTrack.substring( 0, loc );
+				update = true;
 			}
 			if ( dirtyTrack.length() == 1 ) {
 				dirtyTrack = "0" + dirtyTrack;
+				update = true;
 			}
-			metadata.set( "xmpDM:trackNumber", dirtyTrack );
+		} else {
+			dirtyTrack = MetaRenamer.MISSING_TRACK_FILLER;
+			update = true;
 		}
+		if ( update )
+			metadata.set( "xmpDM:trackNumber", dirtyTrack );
 	}
 
 	/** 
@@ -99,22 +119,28 @@ public class MetaUtils {
 	}
 	
 
-	public static String getAttributes( String path) {
+	/** Returns file attribute String for given file. */
+	public static String getAttributes( String path ) {
 		Path currentPath = Paths.get( path );
-		File currentFile = currentPath.toFile(); 
+		File currentFile = currentPath.toFile();
+		return getAttributes( currentFile );
+	}
+
+	/** Returns file attribute String for given file. */
+	public static String getAttributes( File file ) {
 		StringBuffer attr = new StringBuffer();
-		if ( currentFile.exists() ) attr.append( "E" );
-		if ( currentFile.isFile() ) attr.append( "F" );
-		if ( currentFile.isDirectory() ) attr.append( "D" );
-		if ( currentFile.canRead()) attr.append( "R" );
-		if ( currentFile.canWrite()) attr.append( "W" );
-		if ( currentFile.canExecute()) attr.append( "E" );
-		if ( currentFile.exists() ) {
+		if ( file.exists() ) attr.append( "E" );
+		if ( file.isFile() ) attr.append( "F" );
+		if ( file.isDirectory() ) attr.append( "D" );
+		if ( file.canRead()) attr.append( "R" );
+		if ( file.canWrite()) attr.append( "W" );
+		if ( file.canExecute()) attr.append( "X" );
+		if ( file.exists() ) {
 			// Files will throw IOException if non-existent.
 			try {
-				if ( Files.isHidden( currentPath )) attr.append( "H" );
+				if ( Files.isHidden( Paths.get( file.getPath()) )) attr.append( "H" );
 			} catch (IOException e) {}
-			if ( Files.isSymbolicLink( currentPath )) attr.append( "L" );
+			if ( Files.isSymbolicLink( Paths.get( file.getPath()) )) attr.append( "L" );
 		}
 		return attr.toString();
 	}
@@ -122,7 +148,7 @@ public class MetaUtils {
 	/** Recursively delete folder, even if it has contents. */
 	public static void deleteFolder(File folder) throws IOException  {
 	    File [] files = folder.listFiles();
-	    if(files!=null) { //some JVMs return null for empty dirs
+	    if (files!=null) { //some JVMs return null for empty dirs
 	        for(File f: files) {
 	            if(f.isDirectory()) {
 	                deleteFolder(f);

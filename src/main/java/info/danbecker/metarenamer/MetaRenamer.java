@@ -46,7 +46,7 @@ import org.xml.sax.helpers.DefaultHandler;
  * <p>
  * TODO
  * 1. Cannot handle \ at end of source dest directories
- * 2. Get test cases passing. Missing metadata key/values causes exceptions. Which makes counts/sizes off. Which causes cleanups to fail.
+ * 2. Test cases run individually. Exception thrown when run as a suite. Exception creates new files in original source resource directory which throws visited counts off.
  * 
  * @author <a href="mailto://dan@danbecker.info>Dan Becker</a>
  */
@@ -54,15 +54,15 @@ public class MetaRenamer {
 	public static final SimpleDateFormat DEFAULT_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
 	
 	public static final String PATTERN_DELIMITER = "/";
+	// xmpDM is XMP Dynamic Media schema. Other keys are Dublin core.
 	public static final String PATTERN_DEFAULT = "xmpDM:albumArtist/xmpDM:releaseYear - xmpDM:album/xmpDM:artist - xmpDM:releaseYear - xmpDM:album - xmpDM:trackNumber - title.extension";
-
+	public static final String MISSING_TRACK_FILLER = "#";
+	
 	public static final String ADDITIONAL_DATA_KEY_FILENAME = "filename";
 	public static final String ADDITIONAL_DATA_KEY_EXTENSION = "extension";
 	
 	public enum FileAction {
-		CREATE,
-		DELETE,
-		UPDATE,
+		CREATE,	DELETE,	UPDATE,
 	};
 
 	public enum Comparator {
@@ -225,6 +225,12 @@ public class MetaRenamer {
 		        if (attr.isRegularFile()) {
 					// System.out.println("   file=\"" + path.getFileName() + "\", isFile=" + attr.isRegularFile() + ", isDirectory=" + attr.isDirectory() );
 					if (!attr.isDirectory()) {
+						// Check for hidden. Ignore hidden
+						try {
+							if ( Files.isHidden(path) ) 
+								return FileVisitResult.CONTINUE;
+						} catch ( IOException e) {
+						}
 						filesVisited++;
 						if (filesVisited >= filesLimit) {
 							if (verbose) {
@@ -407,9 +413,9 @@ public class MetaRenamer {
 				proposedName = proposedName.replaceAll( key , value );
 			}
 			if ( emptyCount > 0 ) {
-				System.err.println( "   missing metadata oldName=\"" + oldName + "\", proposedName=\"" + proposedName + "\" missing " + emptyCount + " out of " + patternKeyNames.length + " fields: " + emptyKeys.toString()  );
+				System.err.println( "   metadata missing " + emptyCount + "/" + patternKeyNames.length + " fields (" + emptyKeys.toString() + "), srcName=\"" + oldName + "\", proposedName=\"" + proposedName + "\"." );
 				filesMissingMetadata++;
-				return;
+				//  return;  // Go ahead and write file names with missing metadata.
 			}
 			
 		    Path proposedPath = Paths.get( destPath, proposedName );
@@ -471,7 +477,7 @@ public class MetaRenamer {
 		if ( !cachePaths || (actions.size() > 0) || !checkedPaths.contains( path.toString() ) ) {
 			File currentFile = path.toFile();
 			if ( MetaRenamer.debug )
-			    System.out.println( "   checkPath currentFile=\"" + currentFile.getPath() + "\", absPath=\"" + currentFile.getAbsolutePath() + "\", attrs=" + MetaUtils.getAttributes(pattern) );
+			    System.out.println( "   checkPath currentFile=\"" + currentFile.getPath() + "\", absPath=\"" + currentFile.getAbsolutePath() + "\", attrs=" + MetaUtils.getAttributes( currentFile ) );
 			if (attrs.contains( EXISTS )) {
 				result &= currentFile.exists();
 			}
