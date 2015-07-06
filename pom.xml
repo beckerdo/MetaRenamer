@@ -57,7 +57,6 @@
       		<version>4.11</version>
       		<scope>test</scope>
     	</dependency>
-
 	</dependencies>
 
 	<properties>
@@ -66,6 +65,16 @@
 
 	<build>
 	<plugins>
+		<plugin>
+			<!-- Selects the Java compiler version -->
+			<groupId>org.apache.maven.plugins</groupId>
+			<artifactId>maven-compiler-plugin</artifactId>
+			<version>3.1</version>
+			<configuration>
+				<source>1.7</source>
+				<target>1.7</target>
+			</configuration>
+		</plugin>
 		<plugin>
 			<!-- Build an executable JAR -->
 			<groupId>org.apache.maven.plugins</groupId>
@@ -81,12 +90,12 @@
 				</archive>
 			</configuration>
 		</plugin>
-		<!-- This builds an uber JAR with all dependencies -->
 		<plugin>
+			<!-- This builds an uber JAR with all dependencies -->
 			<groupId>org.apache.maven.plugins</groupId>
 			<artifactId>maven-shade-plugin</artifactId>
-			<version>1.6</version>
-			<executions>
+      		<version>2.4</version>
+   			<executions>
 				<execution>
 					<phase>package</phase>
 					<goals>
@@ -103,7 +112,6 @@
 								</excludes>
 							</filter>
 						</filters>
-						<!-- Additional configuration. -->
 					</configuration>
 				</execution>
 			</executions>

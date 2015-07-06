@@ -45,12 +45,8 @@ import org.xml.sax.helpers.DefaultHandler;
  * An app to rename files based on metadata in the file.
  * <p>
  * TODO
- * 1. Double directory
- * -v -m -l 2000 -s "E:\audio\DansMusic\Patty Griffin" -g "Living*"
- *    action: rename "E:\audio\DansMusic\Patty Griffin\Living with Ghosts\01 Moses.m4a" to
- *     "E:\audio\DansMusic\Patty Griffin\Patty Griffin\1996 - Living with Ghosts\Patty Griffin - 1996 - Living with Ghosts - 01 - Moses.m4a".
- * 2. Cannot handle \ at end of source dest directories
- * 3. Get test cases passing.
+ * 1. Cannot handle \ at end of source dest directories
+ * 2. Get test cases passing. Missing metadata key/values causes exceptions. Which makes counts/sizes off. Which causes cleanups to fail.
  * 
  * @author <a href="mailto://dan@danbecker.info>Dan Becker</a>
  */
@@ -130,7 +126,8 @@ public class MetaRenamer {
 	    // Gather command line arguments for execution
 	    if( line.hasOption( "help" ) ) {
 	    	HelpFormatter formatter = new HelpFormatter();
-	    	formatter.printHelp( "java -jar MetaRenamer.jar <options> info.danbecker.metarename.MetaRenamer", cliOptions );
+	    	formatter.setWidth( 100 );
+	    	formatter.printHelp( "java -jar MetaRenamer.jar <options>", cliOptions );
 	    	System.exit( 0 );
 	    }
 	    if( line.hasOption( "verbose" ) ) {
@@ -394,19 +391,23 @@ public class MetaRenamer {
 		    // Propose a new pattern.
 		    String proposedName = new String( pattern );
 		    int emptyCount = 0;
+		    StringBuffer emptyKeys = new StringBuffer( "" );
 			for ( String key: patternKeyNames ) {
 				String value = metadata.get( key );
 				// System.out.println( "   key=" + key + ", value=" + value);
 				if (( null == value ) || (value.length() == 0)) {
 					// System.err.println( "   missing key=" + key );
 					emptyCount++;
+					if ( emptyKeys.length() > 0 ) 
+						emptyKeys.append(",");
+					emptyKeys.append( key );
 					value = ""; 
 				}
 			    value = MetaUtils.escapeChars( value );
 				proposedName = proposedName.replaceAll( key , value );
 			}
 			if ( emptyCount > 0 ) {
-				System.err.println( "   missing metadata oldName=\"" + oldName + "\", proposedName=\"" + proposedName + "\" missing " + emptyCount + " out if " + patternKeyNames.length + " fields.");
+				System.err.println( "   missing metadata oldName=\"" + oldName + "\", proposedName=\"" + proposedName + "\" missing " + emptyCount + " out of " + patternKeyNames.length + " fields: " + emptyKeys.toString()  );
 				filesMissingMetadata++;
 				return;
 			}
@@ -558,6 +559,7 @@ public class MetaRenamer {
 		if ( !file.exists() || !file.isFile() || !file.canRead() )
 			return;
 		
+		// try with resources. Requires JDK 1.7
 		try (BufferedReader br = new BufferedReader(new FileReader(file))) {
 		    String line;
 		    while ((line = br.readLine()) != null) {

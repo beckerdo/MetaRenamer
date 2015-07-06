@@ -1,5 +1,11 @@
 .settings
 .project
 .classpath
+*.DS_Store
 target
-
+*.class
+*.jar
+*.war
+*.ear
+.mtj.tmp/
+hs_err_pid*

@@ -53,6 +53,14 @@ Action mode "-a" is used to perform action, otherwise the app tells you what it 
    java -jar target/MetaRenamer-1.0.0-SNAPSHOT.jar -v -s "e:/audio/CDs" -d "." -t "GE2015-07-01"
 </pre>
 </code>
+==========
+FAQ
+   *  Q: I see multiple repeated directories in my destination path. For example the artist name is repeated twice in the path.
+   	  A: Be aware that the destination path and the naming pattern are appended to form the complete destination path. So
+	  	 if the destination path has an artist name and the naming pattern has an artist name you will see two.
+		 For example destinationPath="/Music/ACDC" and naming pattern="artist/year-album/title.ext", the complete file path
+		 of a song might be might be "/Music/ACDC/ACDC/1980-Back in Black/Hells Bells.mp3"
+
 
 ==========
 TODOs

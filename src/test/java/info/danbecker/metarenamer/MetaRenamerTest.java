@@ -13,8 +13,6 @@ import java.util.EnumSet;
 import java.util.Set;
 import java.util.TreeSet;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.joda.time.LocalDateTime;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
@@ -27,9 +25,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertNotNull;
 
 public class MetaRenamerTest {
-	
-	@SuppressWarnings("unused")
-	private static Logger logger = LoggerFactory.getLogger(MetaRenamerTest.class);
 	
 	@Test
     public void testCheckPath() throws IOException {
@@ -69,6 +64,8 @@ public class MetaRenamerTest {
     public void testCheckPathActions() throws IOException {
 		MetaRenamer.verbose = false;
 		boolean result = false;
+		
+		// This really needs a clean-up to ensire stats are correct (e.g. collision count.)
 
 		// Text file create test mode
 		result = MetaRenamer.checkPath( "src/test/resources/info/danbecker/metarenamer/pathA/blah.txt", 
@@ -120,13 +117,13 @@ public class MetaRenamerTest {
 		MetaRenamer.dirsRenamed = 0;
 		MetaRenamer.dirsCreated = 0;
 
-		MetaRenamer.main( new String [] { "-t", "-v", "-s", "src/test/resources/info/danbecker/metarenamer/" } );
+		MetaRenamer.main( new String [] { "-v", "-s", "src/test/resources/info/danbecker/metarenamer/" } );
 
-		assertEquals( "files visited", 7, MetaRenamer.filesVisited );
+		assertEquals( "files visited", 11, MetaRenamer.filesVisited );
 		assertEquals( "files collided", 0, MetaRenamer.filesCollided );
 		assertEquals( "files renamed", 0, MetaRenamer.filesRenamed );
 		assertEquals( "files created", 0, MetaRenamer.filesCreated );
-		assertEquals( "dirs visited", 4, MetaRenamer.dirsVisited );
+		assertEquals( "dirs visited", 10, MetaRenamer.dirsVisited );
 		assertEquals( "dirs collided", 0, MetaRenamer.dirsCollided );
 		assertEquals( "dirs renamed", 0, MetaRenamer.dirsRenamed );
 		assertEquals( "dirs created", 0, MetaRenamer.dirsCreated );
@@ -143,7 +140,7 @@ public class MetaRenamerTest {
 		Path tempPath = Files.createTempDirectory( "metaTestPath" );
 		// System.out.println( "   path old size=" + oldSize );
 		MetaRenamer.main( new String [] { "-v", "-s", sourcePath.toString(), "-d", tempPath.toString() } );
-		try { Thread.sleep( 1000 ); } catch (InterruptedException e) {	}
+		try { Thread.sleep( 2000 ); } catch (InterruptedException e) {	}
 		long newSize = MetaUtils.recursiveSize( tempPath.toFile() );
 
 		// assertTrue( "copied directory size compare", newSize == sourceSize );
@@ -272,6 +269,8 @@ public class MetaRenamerTest {
 	@Test
 	public void testReadDateTime() {
 		// Happy paths
+		MetaRenamer.dateTimeComparator = MetaRenamer.Comparator.FALSE;
+		MetaRenamer.dateTimeCompare = null;;
 		assertEquals( "dateTime",  MetaRenamer.Comparator.FALSE, MetaRenamer.dateTimeComparator );
 		assertNull( "dateTime",  MetaRenamer.dateTimeCompare );
 		
