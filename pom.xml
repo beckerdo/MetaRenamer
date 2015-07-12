@@ -11,6 +11,10 @@
 	<description>Dan Becker's File Metadata Renamer - remames files and directories according to embedded metadata.</description>
 	<url>http://www.danbecker.info/</url>
 
+	<properties>
+		<version.tika>1.9</version.tika>
+	</properties>
+
 	<dependencies>
 		<dependency>
 			<groupId>org.apache.tika</groupId>
@@ -58,10 +62,6 @@
       		<scope>test</scope>
     	</dependency>
 	</dependencies>
-
-	<properties>
-		<version.tika>1.9</version.tika>
-	</properties>
 
 	<build>
 	<plugins>

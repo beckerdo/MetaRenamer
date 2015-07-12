@@ -34,16 +34,16 @@ public class MetaUtils {
 	 * @oaram someDefaults of the form "key1=value1;key2=value2" 
 	 */
 	public static void updateMetadata( Metadata metadata ) {
-		// synthesis - add new items from existing items
-
 		// cleanup
-	    addYear( metadata );
+	    cleanYear( metadata );
     	cleanTrack( metadata );
 
-	    String albumArtist = metadata.get( "xmpDM:albumArtist" );
+		// synthesis - add new items from existing items
+    	String key = "xmpDM:albumArtist";
+	    String albumArtist = metadata.get( key );
 	    if ((null == albumArtist ) || ( albumArtist.length() == 0)) {
-	    	albumArtist = metadata.get( "xmpDM:artist" );
-		    metadata.set( "xmpDM:albumArtist", metadata.get( "xmpDM:artist" ) );
+	    	albumArtist = metadata.get( key );
+		    metadata.set( key, metadata.get( key ) );
 	    }
 	    
 	    // Mapping, transformation
@@ -56,18 +56,6 @@ public class MetaUtils {
 			    metadata.set( "xmpDM:albumArtist", "Various" );
 	    	} else if ( albumArtist.contains( "rtist")) {
 	    		System.err.println( "   albumArtist=\"" + albumArtist + "\"" );
-	    	}
-	    }
-
-	    // Fix up missing title.
-	    String title = metadata.get( "title" );
-	    if (( null == title ) || ( title.length() == 0 )) {
-	    	String defaultTitle = metadata.get( MetaRenamer.ADDITIONAL_DATA_KEY_FILENAME );
-	    	if ( null != defaultTitle ) {
-	    	   int extension = defaultTitle.lastIndexOf('.');
-	    	   if ( -1 != extension )
-	    		   defaultTitle = defaultTitle.substring(0, extension );
-	    	   metadata.set( "title", defaultTitle );
 	    	}
 	    }
 	}
@@ -101,7 +89,7 @@ public class MetaUtils {
 	/** 
 	 * Creates Metadata "xmpDM:releaseYear" from "xmpDM:releaseDate" 
 	 */
-	public static void addYear( Metadata metadata ) {
+	public static void cleanYear( Metadata metadata ) {
 		String releaseDate = metadata.get( "xmpDM:releaseDate" );
 		if ( null == releaseDate )
 			return;

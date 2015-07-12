@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
@@ -20,6 +21,8 @@ import java.nio.file.attribute.FileTime;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.List;
+import java.util.LinkedList;
 import java.util.concurrent.TimeUnit;
 import java.util.Date;
 import java.text.SimpleDateFormat;
@@ -45,7 +48,7 @@ import org.xml.sax.helpers.DefaultHandler;
  * An app to rename files based on metadata in the file.
  * <p>
  * TODO
- * 1. Cannot handle \ at end of source dest directories
+ * 1. No Exception friendlier messages on file not found.
  * 2. Test cases run individually. Exception thrown when run as a suite. Exception creates new files in original source resource directory which throws visited counts off.
  * 
  * @author <a href="mailto://dan@danbecker.info>Dan Becker</a>
@@ -55,6 +58,7 @@ public class MetaRenamer {
 	
 	public static final String PATTERN_DELIMITER = "/";
 	// xmpDM is XMP Dynamic Media schema. Other keys are Dublin core.
+	// Common search fallback: xmpDM:album,title,dc:title?
 	public static final String PATTERN_DEFAULT = "xmpDM:albumArtist/xmpDM:releaseYear - xmpDM:album/xmpDM:artist - xmpDM:releaseYear - xmpDM:album - xmpDM:trackNumber - title.extension";
 	public static final String MISSING_TRACK_FILLER = "#";
 	
@@ -100,6 +104,7 @@ public class MetaRenamer {
     public static int dirsCreated = 0;
     public static int dirsCollided = 0;
     public static int dirsMissingMetadata = 0;
+    public static List<String> missingMetadata = new LinkedList<String>(); 
 
     // Tika instance vars
     public static TikaConfig tikaConfig;
@@ -218,107 +223,127 @@ public class MetaRenamer {
 	    
 	    // Kick off tree walking process.
     	// See file system path matching at http://docs.oracle.com/javase/tutorial/essential/io/find.html
-	    matcher = FileSystems.getDefault().getPathMatcher("glob:" + fileGlob );	    
-		Files.walkFileTree( Paths.get( sourcePath ), new SimpleFileVisitor<Path>() {
-		    @Override
-		    public FileVisitResult visitFile(Path path, BasicFileAttributes attr) {
-		        if (attr.isRegularFile()) {
-					// System.out.println("   file=\"" + path.getFileName() + "\", isFile=" + attr.isRegularFile() + ", isDirectory=" + attr.isDirectory() );
-					if (!attr.isDirectory()) {
-						// Check for hidden. Ignore hidden
-						try {
-							if ( Files.isHidden(path) ) 
-								return FileVisitResult.CONTINUE;
-						} catch ( IOException e) {
+	    matcher = FileSystems.getDefault().getPathMatcher("glob:" + fileGlob );
+	    try {
+	    	Files.walkFileTree( Paths.get( sourcePath ), new MetaRenamerFileVisitor() );
+			if (!quiet) {
+				if (verbose) {
+					if ( missingMetadata.size() > 0) {
+						StringBuilder sb = new StringBuilder( "missing metadata keys (" + missingMetadata.size() + "/" + patternKeyNames.length + ")=" );
+						int i = 0;
+						for ( String metadataKey: missingMetadata) {
+							if ( i > 0 ) sb.append( ",");
+							sb.append( metadataKey );
+							i++;
 						}
-						filesVisited++;
-						if (filesVisited >= filesLimit) {
-							if (verbose) {
-								System.out.println("   files visited limit reached \"" + filesLimit + "\".");
-							}
-							return FileVisitResult.TERMINATE;
-						}
+						System.out.println( sb.toString() );
+					} else {
+						System.out.println( "no missing metadata" );
 					}
-						
-			    	
-		            // System.out.format("Regular file: %s%n", file);
-    				// Check lastModified
-    				if ( null != MetaRenamer.dateTimeCompare ) {
-    					File file = path.toFile();
-    					boolean useIt = MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, new Date( file.lastModified() ) ); 
-	    				// System.out.println("   file=\"" + file.getName() + "\"" + ", datetime \"" + DEFAULT_DATE_FORMAT.format( new Date( file.lastModified() )) + "\" " + 
-	    				//    MetaRenamer.dateTimeComparator.toString() + DEFAULT_DATE_FORMAT.format( MetaRenamer.dateTimeCompare ) + ", continue=" + useIt);
-    					if ( !useIt ) {
-		    		        return FileVisitResult.SKIP_SUBTREE;
-    					}
-    				}
-	            	try {
-						MetaRenamer.fileVisitor( path.toFile() );
-					} catch (Exception e) {
-						System.err.println( "   exception=" + e.getMessage());
-						e.printStackTrace();
-					}
-		        } else if (attr.isSymbolicLink()) {
-			        System.out.format( "   will not follow symbolic link: %s%n", path );
-		        } else {
-		            System.out.format( "   will not follow other file: %s%n", path );
-		        }
-		        return FileVisitResult.CONTINUE;
-		    }
-		    
-		    @Override
-		    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-		    	// Only run glob on direct children of sourcePath.
-		    	// System.out.println( "   parent=\"" + dir.getParent().toString() + "\", equals=" + dir.getParent().toString().equals( sourcePath ) + ", compareTo=" + dir.getParent().compareTo( Paths.get( sourcePath )));
-				if (attrs.isDirectory()) {
-					// System.out.println("   file=\"" + dir.getFileName() + "\", isFile=" + attrs.isRegularFile() + ", isDirectory=" + attrs.isDirectory() );
-					dirsVisited++;
 				}
-		    	
-		    	if ( dir.getParent().toString().equals( sourcePath )) {
-		    		Path name = dir.getFileName();
-		    		if (name != null)  {
-		    			if ( matcher.matches(name) ) {
-		    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
-		    				//	System.out.println("   sourcePath child \"" + name + "\" matches glob." );
-		    				// Check lastModified
-		    				if ( null != MetaRenamer.dateTimeCompare ) {
-		    					File file = dir.toFile();
-		    					boolean useIt = MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, new Date( file.lastModified() ) ); 
-			    				// System.out.println("   file=\"" + file.getName() + "\"" + ", datetime \"" + DEFAULT_DATE_FORMAT.format( new Date( file.lastModified() )) + "\" " + 
-				    			// MetaRenamer.dateTimeComparator.toString() + DEFAULT_DATE_FORMAT.format( MetaRenamer.dateTimeCompare ) + ", continue=" + useIt);
-		    					if ( useIt ) {
-		    						return FileVisitResult.CONTINUE;
-		    					} else {
-				    		        return FileVisitResult.SKIP_SUBTREE;
-		    					}
-		    				}
-		    				return FileVisitResult.CONTINUE;
-		    			} else {
-		    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
-		                	//   System.out.println("   sourcePath child \"" + name + "\" does not match glob." );
-		    		        return FileVisitResult.SKIP_SUBTREE;							    				
-		    			}
-		    		}
-		    	}
-	    		// System.out.println("   not child \"" + dir.getFileName() + "\" matches glob." );
-            	return FileVisitResult.CONTINUE;		    		
-		    }
-		    
-		    // @Override
-		    // public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-		    // 	// System.out.println( "   done visiting \"" + dir.toString() + "\"" );
-		    // 	return super.postVisitDirectory(dir, exc);
-		    // }
-		} );
+				System.out.println( "dirs visited/renamed/created/collided/missing meta " + dirsVisited + "/" + dirsRenamed + "/" + dirsCreated + "/" + dirsCollided + "/" + dirsMissingMetadata + "." );
+				System.out.println( "files visited/renamed/created/collided/missing meta " + filesVisited + "/" + filesRenamed + "/" + filesCreated + "/" + filesCollided + "/" + filesMissingMetadata ); 
+			}
+	    } catch ( IOException e ) {
+	    	System.err.println( "Exception=" + e);
+	    }
 
 		// conclude and end
-		if (!quiet) {
-		   System.out.println( "dirs visited/renamed/created/collided/missing " + dirsVisited + "/" + dirsRenamed + "/" + dirsCreated + "/" + dirsCollided + "/" + dirsMissingMetadata + "." );
-		   System.out.println( "files visited/renamed/created/collided/missing " + filesVisited + "/" + filesRenamed + "/" + filesCreated + "/" + filesCollided + "/" + filesMissingMetadata ); 
-	       long elapsedTime = System.currentTimeMillis() - startTime;
-	       System.out.println( "elapsed time=" + format( elapsedTime ));       
-		}
+       long elapsedTime = System.currentTimeMillis() - startTime;
+       System.out.println( "elapsed time=" + format( elapsedTime ));       
+	}
+	
+	/** This is the file visitor called for each file on the path. */
+	public static class MetaRenamerFileVisitor extends SimpleFileVisitor<Path> {
+	    @Override
+	    public FileVisitResult visitFile(Path path, BasicFileAttributes attr) {
+	        if (attr.isRegularFile()) {
+				// System.out.println("   file=\"" + path.getFileName() + "\", isFile=" + attr.isRegularFile() + ", isDirectory=" + attr.isDirectory() );
+				if (!attr.isDirectory()) {
+					// Check for hidden. Ignore hidden
+					try {
+						if ( Files.isHidden(path) ) 
+							return FileVisitResult.CONTINUE;
+					} catch ( IOException e) {
+					}
+					filesVisited++;
+					if (filesVisited >= filesLimit) {
+						if (verbose) {
+							System.out.println("   files visited limit reached \"" + filesLimit + "\".");
+						}
+						return FileVisitResult.TERMINATE;
+					}
+				}
+					
+				// Check lastModified
+				if ( null != MetaRenamer.dateTimeCompare ) {
+					File file = path.toFile();
+					boolean useIt = MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, new Date( file.lastModified() ) ); 
+    				// System.out.println("   file=\"" + file.getName() + "\"" + ", datetime \"" + DEFAULT_DATE_FORMAT.format( new Date( file.lastModified() )) + "\" " + 
+    				//    MetaRenamer.dateTimeComparator.toString() + DEFAULT_DATE_FORMAT.format( MetaRenamer.dateTimeCompare ) + ", continue=" + useIt);
+					if ( !useIt ) {
+	    		        return FileVisitResult.SKIP_SUBTREE;
+					}
+				}
+            	try {
+					MetaRenamer.fileVisitor( path.toFile() );
+				} catch (Exception e) {
+					System.err.println( "   exception=" + e.getMessage());
+					e.printStackTrace();
+				}
+	        } else if (attr.isSymbolicLink()) {
+		        System.out.format( "   will not follow symbolic link: %s%n", path );
+	        } else {
+	            System.out.format( "   will not follow other file: %s%n", path );
+	        }
+	        return FileVisitResult.CONTINUE;
+	    }
+	    
+	    @Override
+	    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+	    	// Only run glob on direct children of sourcePath.
+	    	// System.out.println( "   parent=\"" + dir.getParent().toString() + "\", equals=" + dir.getParent().toString().equals( sourcePath ) + ", compareTo=" + dir.getParent().compareTo( Paths.get( sourcePath )));
+			if (attrs.isDirectory()) {
+				// System.out.println("   file=\"" + dir.getFileName() + "\", isFile=" + attrs.isRegularFile() + ", isDirectory=" + attrs.isDirectory() );
+				dirsVisited++;
+			}
+	    	
+	    	if ( dir.getParent().toString().equals( sourcePath )) {
+	    		Path name = dir.getFileName();
+	    		if (name != null)  {
+	    			if ( matcher.matches(name) ) {
+	    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
+	    				//	System.out.println("   sourcePath child \"" + name + "\" matches glob." );
+	    				// Check lastModified
+	    				if ( null != MetaRenamer.dateTimeCompare ) {
+	    					File file = dir.toFile();
+	    					boolean useIt = MetaRenamer.testDateTime( MetaRenamer.dateTimeComparator, MetaRenamer.dateTimeCompare, new Date( file.lastModified() ) ); 
+		    				// System.out.println("   file=\"" + file.getName() + "\"" + ", datetime \"" + DEFAULT_DATE_FORMAT.format( new Date( file.lastModified() )) + "\" " + 
+			    			// MetaRenamer.dateTimeComparator.toString() + DEFAULT_DATE_FORMAT.format( MetaRenamer.dateTimeCompare ) + ", continue=" + useIt);
+	    					if ( useIt ) {
+	    						return FileVisitResult.CONTINUE;
+	    					} else {
+			    		        return FileVisitResult.SKIP_SUBTREE;
+	    					}
+	    				}
+	    				return FileVisitResult.CONTINUE;
+	    			} else {
+	    				// if (( verbose ) && !( "*".equals( fileGlob ))) 
+	                	//   System.out.println("   sourcePath child \"" + name + "\" does not match glob." );
+	    		        return FileVisitResult.SKIP_SUBTREE;							    				
+	    			}
+	    		}
+	    	}
+    		// System.out.println("   not child \"" + dir.getFileName() + "\" matches glob." );
+        	return FileVisitResult.CONTINUE;		    		
+	    }
+	    
+	    // @Override
+	    // public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+	    // 	// System.out.println( "   done visiting \"" + dir.toString() + "\"" );
+	    // 	return super.postVisitDirectory(dir, exc);
+	    // }
+		
 	}
 	
 	// For example, to convert 10 minutes to milliseconds, use: TimeUnit.MILLISECONDS.convert(10L, TimeUnit.MINUTES)
@@ -403,19 +428,21 @@ public class MetaRenamer {
 				// System.out.println( "   key=" + key + ", value=" + value);
 				if (( null == value ) || (value.length() == 0)) {
 					// System.err.println( "   missing key=" + key );
-					emptyCount++;
+					value = key; // replace empty value with key name, e.g. "title"="title"
+					// accounting
 					if ( emptyKeys.length() > 0 ) 
 						emptyKeys.append(",");
 					emptyKeys.append( key );
-					value = ""; 
+					if ( !missingMetadata.contains( key ) )
+						missingMetadata.add( key );
+					emptyCount++;
 				}
 			    value = MetaUtils.escapeChars( value );
 				proposedName = proposedName.replaceAll( key , value );
 			}
 			if ( emptyCount > 0 ) {
-				System.err.println( "   metadata missing " + emptyCount + "/" + patternKeyNames.length + " fields (" + emptyKeys.toString() + "), srcName=\"" + oldName + "\", proposedName=\"" + proposedName + "\"." );
+				// System.out.println( "   metadata missing " + emptyCount + "/" + patternKeyNames.length + " fields (" + emptyKeys.toString() + "), srcName=\"" + oldName + "\", proposedName=\"" + proposedName + "\"." );
 				filesMissingMetadata++;
-				//  return;  // Go ahead and write file names with missing metadata.
 			}
 			
 		    Path proposedPath = Paths.get( destPath, proposedName );
@@ -632,5 +659,4 @@ public class MetaRenamer {
 		
 		return false;
 	}
-	
 }
