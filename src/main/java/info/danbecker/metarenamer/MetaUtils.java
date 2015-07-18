@@ -42,8 +42,10 @@ public class MetaUtils {
     	String key = "xmpDM:albumArtist";
 	    String albumArtist = metadata.get( key );
 	    if ((null == albumArtist ) || ( albumArtist.length() == 0)) {
-	    	albumArtist = metadata.get( key );
-		    metadata.set( key, metadata.get( key ) );
+	    	albumArtist = metadata.get( "Author" );
+		    if ((null == albumArtist ) || ( albumArtist.length() == 0)) 
+		    	albumArtist = metadata.get( "creator" );
+		    metadata.set( key, albumArtist );
 	    }
 	    
 	    // Mapping, transformation
@@ -187,7 +189,7 @@ public class MetaUtils {
 		return proposedString;
 	}
 	
-	/** Recusively delete folder, even if it has contents. */
+	/** Recursively delete folder, even if it has contents. */
 	public static long recursiveSize(File folder) throws IOException {
 		long size = 0;
 	    File [] files = folder.listFiles();
