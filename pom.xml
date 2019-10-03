@@ -12,7 +12,7 @@
 	<url>http://www.danbecker.info/</url>
 
 	<properties>
-		<version.tika>1.9</version.tika>
+		<version.tika>1.22</version.tika>
 	</properties>
 
 	<dependencies>
