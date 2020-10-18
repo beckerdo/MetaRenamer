@@ -58,7 +58,7 @@
 		<dependency>
       		<groupId>junit</groupId>
       		<artifactId>junit</artifactId>
-      		<version>4.11</version>
+      		<version>4.13.1</version>
       		<scope>test</scope>
     	</dependency>
 	</dependencies>
@@ -69,17 +69,17 @@
 			<!-- Selects the Java compiler version -->
 			<groupId>org.apache.maven.plugins</groupId>
 			<artifactId>maven-compiler-plugin</artifactId>
-			<version>3.1</version>
+			<version>3.8.1</version>
 			<configuration>
-				<source>1.7</source>
-				<target>1.7</target>
+				<source>1.8</source>
+				<target>1.8</target>
 			</configuration>
 		</plugin>
 		<plugin>
 			<!-- Build an executable JAR -->
 			<groupId>org.apache.maven.plugins</groupId>
 			<artifactId>maven-jar-plugin</artifactId>
-			<version>2.4</version>
+			<version>3.1.2</version>
 			<configuration>
 				<archive>
 					<manifest>
